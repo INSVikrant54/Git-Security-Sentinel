@@ -90,8 +90,8 @@ python scripts/scan_diff.py --staged --ai --provider ollama --model gemma3:4b
 # 2. Standalone Local Ollama Review:
 python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
 
-# 3. Google AI Studio (Gemini API via GEMINI_API_KEY):
-python scripts/ai_review.py --report scan-report.json --provider gemini --model gemini-1.5-flash
+# 3. Google AI Studio (Default: Gemma 4 31B via GEMINI_API_KEY):
+python scripts/ai_review.py --report scan-report.json --provider gemini --model gemma-4-31b-it
 
 # 4. Groq or OpenAI (via GROQ_API_KEY / OPENAI_API_KEY):
 python scripts/ai_review.py --report scan-report.json --provider groq --model llama-3.3-70b-versatile

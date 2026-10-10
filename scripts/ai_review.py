@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 VERSION = "1.0.0"
-DEFAULT_TIMEOUT_SEC = 60
+DEFAULT_TIMEOUT_SEC = 120
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
 
@@ -30,7 +30,7 @@ PROVIDER_DEFAULTS = {
         "env_var": None,
     },
     "gemini": {
-        "model": "gemini-2.5-flash",
+        "model": "gemma-4-31b-it",
         "endpoint": "https://generativelanguage.googleapis.com",
         "env_var": "GEMINI_API_KEY",
     },
@@ -170,7 +170,9 @@ def query_gemini(
     clean_model = model.strip()
     if clean_model.startswith("models/"):
         clean_model = clean_model[len("models/"):]
-    if clean_model in {"gemma", "gemma-4", "gemma4", "gemma-2-9b-it"}:
+    if clean_model.lower() in {"gemma", "gemma-4", "gemma4", "gemma-4-31b", "gemma4-31b", "gemma 4 31b", "gemma-2-9b-it"}:
+        clean_model = "gemma-4-31b-it"
+    elif clean_model.lower() in {"gemma-4-26b", "gemma4-26b"}:
         clean_model = "gemma-4-26b-a4b-it"
     elif clean_model == "gemini-1.5-flash":
         clean_model = "gemini-2.5-flash"
@@ -211,6 +213,18 @@ def query_gemini(
             error_body = e.read().decode("utf-8")
         except Exception:
             pass
+        if e.code in {503, 429} and clean_model == "gemma-4-31b-it":
+            sys.stderr.write(
+                f"Notice: Google AI Studio returned HTTP {e.code} (high demand) for {clean_model}. "
+                "Failing over to Gemma 4 MoE (gemma-4-26b-a4b-it)...\n"
+            )
+            return query_gemini(
+                api_key=api_key,
+                model="gemma-4-26b-a4b-it",
+                prompt=prompt,
+                system_prompt=system_prompt,
+                timeout_sec=timeout_sec,
+            )
         return False, None, f"Gemini HTTP Error {e.code}: {e.reason}. Details: {error_body}"
     except urllib.error.URLError as e:
         return False, None, f"Connection error contacting Gemini: {e.reason}"

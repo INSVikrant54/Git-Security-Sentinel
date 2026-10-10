@@ -283,15 +283,19 @@ The AI reviewer provides deep contextual triage and safe code remediation, suppo
    python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
    ```
 
-### Option B: Google AI Studio (Gemini API)
+### Option B: Google AI Studio (Default: Gemma 4 31B)
 1. Get a free API key from [aistudio.google.com](https://aistudio.google.com).
-2. Set your environment variable:
+2. Set your API key in `.env` or environment:
    ```powershell
-   $env:GEMINI_API_KEY = "your_google_ai_studio_api_key"
+   Set-Content -Path ".env" -Value "GEMINI_API_KEY=your_key_here"
+   # or
+   $env:GEMINI_API_KEY = "your_key_here"
    ```
-3. Run the review (automatically selects Gemini):
+3. Run the review (automatically defaults to **Gemma 4 31B**):
    ```bash
-   python scripts/ai_review.py --report scan-report.json --provider gemini --model gemini-1.5-flash
+   git scan --ai --provider gemini
+   # or standalone:
+   python scripts/ai_review.py --report scan-report.json --provider gemini --model gemma-4-31b-it
    ```
 
 ### Option C: Groq or OpenAI
