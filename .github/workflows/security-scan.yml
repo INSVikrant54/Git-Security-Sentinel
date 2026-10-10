@@ -1,0 +1,59 @@
+name: Security Scan and Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Run Unit Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Verify zero third-party dependencies & compile scripts
+        run: |
+          python -m py_compile scripts/scan_diff.py scripts/ai_review.py tests/test_scan_diff.py
+
+      - name: Run unit test suite
+        run: |
+          python -m unittest discover -s tests -p "test_*.py" -v
+
+  diff-security-scan:
+    name: PR Diff Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: test
+
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run Git Security Sentinel against base branch
+        run: |
+          python scripts/scan_diff.py --base "${{ github.event.pull_request.base.ref }}" --severity-threshold high
