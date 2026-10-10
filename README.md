@@ -197,15 +197,36 @@ python scripts/scan_diff.py --help
 python scripts/scan_diff.py --staged
 ```
 
-> **💡 Pro-Tip: 1-Word Shortcut (`git scan`)**  
-> Teach Git to run the staged scanner automatically by adding an alias:  
+> **💡 Pro-Tip: 1-Word Shortcut (`git scan` & `git scan --ai`)**  
+> Teach Git to run the scanner automatically by adding an alias:  
 > ```bash
 > git config alias.scan "!python scripts/scan_diff.py --staged"
 > ```  
 > From then on, simply run:  
 > ```bash
+> # Deterministic offline scan:
 > git scan
+>
+> # Unified AI Security Review (Gemma 3 / Ollama or Gemini):
+> git scan --ai
+> ```  
+> *Want AI review enabled on every staged scan by default?*  
+> ```bash
+> git config alias.scan "!python scripts/scan_diff.py --staged --ai"
 > ```
+
+### Unified AI-Powered Diff Scan (Gemma & Multi-Provider)
+Run deterministic secret detection, in-memory redaction, and local Gemma contextual analysis in a **single command**:
+```bash
+# 1. Automatic: Uses local Gemma (via Ollama) or cloud key if configured:
+python scripts/scan_diff.py --staged --ai
+
+# 2. Local Gemma with Ollama explicitly:
+python scripts/scan_diff.py --staged --ai --provider ollama --model gemma3:4b
+
+# 3. Google AI Studio (Gemini):
+python scripts/scan_diff.py --staged --ai --provider gemini --model gemini-1.5-flash
+```
 
 ### Scan Unstaged Changes (Working Tree Review)
 ```bash
@@ -245,13 +266,20 @@ python scripts/scan_diff.py --all --severity-threshold medium
 
 ## 11. AI Reviewer Setup & Multi-Provider Guide
 
-The AI reviewer is an optional contextual enhancement supporting **local open-weight models** (via Ollama) as well as **cloud AI providers** (Google AI Studio, Groq, OpenAI) using Python's standard library (`urllib.request`) with zero pip dependencies.
+The AI reviewer provides deep contextual triage and safe code remediation, supporting **local open-weight models** (Gemma via Ollama) as well as **cloud AI providers** (Google AI Studio, Groq, OpenAI) using Python's standard library (`urllib.request`) with zero pip dependencies.
 
-### Option A: Local Ollama (100% Private, Zero Key, Offline)
+### Option A: Local Ollama & Gemma (100% Private, Zero Key, Offline)
 1. Install and start Ollama from [ollama.com](https://ollama.com): `ollama serve`
-2. Pull Gemma 3: `ollama pull gemma3:4b`
-3. Run the review:
+2. Pull Gemma 3 or Gemma 2:
    ```bash
+   ollama pull gemma3:4b
+   # or
+   ollama pull gemma2:2b
+   ```
+3. Run the review directly:
+   ```bash
+   git scan --ai
+   # or standalone:
    python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
    ```
 

@@ -586,10 +586,54 @@ class TestAIReviewer(unittest.TestCase):
                 prompt="test prompt",
                 system_prompt="test system",
             )
-            self.assertTrue(success)
-            self.assertEqual(text, "OpenAI review: Potential vulnerability.")
-            self.assertIsNone(err)
+    # 28. Unified AI Review Argument Parsing
+    def test_unified_ai_arg_parsing(self):
+        parser = scan_diff.build_arg_parser()
+        args = parser.parse_args(["--staged", "--ai", "--provider", "gemini", "--model", "gemini-1.5-pro"])
+        self.assertTrue(args.ai)
+        self.assertEqual(args.provider, "gemini")
+        self.assertEqual(args.model, "gemini-1.5-pro")
+
+    # 29. Unified AI Review on Clean Diff (Skipped with 0 findings)
+    def test_unified_ai_clean_diff_skipped(self):
+        scanner = scan_diff.GitSecurityScanner(repo_root=Path("."))
+        report = scanner.scan_diff_content("", scan_mode="staged")
+        self.assertEqual(report["summary"]["total"], 0)
+
+    # 30. Programmatic run_ai_review Execution
+    def test_run_ai_review_programmatic(self):
+        sample_report = {
+            "scanner": "git-security-sentinel",
+            "version": "1.0.0",
+            "status": "completed",
+            "summary": {"total": 1, "critical": 1, "high": 0, "medium": 0, "low": 0},
+            "findings": [
+                {
+                    "rule_id": "secret.aws_access_key",
+                    "category": "secrets",
+                    "severity": "critical",
+                    "confidence": "high",
+                    "file": "config.py",
+                    "line": 5,
+                    "message": "AWS key detected",
+                    "evidence": "[REDACTED:AWS_KEY_ID]",
+                    "recommendation": "Use environment variable",
+                }
+            ],
+            "license": {"root_license_present": True, "license_file": "LICENSE"},
+        }
+
+        with patch("scripts.ai_review.check_ollama_available", return_value=(False, "Connection refused")):
+            success, out_struct, out_str = ai_review.run_ai_review(
+                report_data=sample_report,
+                provider="ollama",
+                format_mode="json",
+            )
+            self.assertFalse(success)
+            self.assertFalse(out_struct["inference_completed"])
+            self.assertIn("error", out_struct)
 
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -828,6 +828,41 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Minimum severity level that triggers an exit code of 1 (default: high).",
     )
 
+    ai_group = parser.add_argument_group("AI Security Review Options")
+    ai_group.add_argument(
+        "--ai",
+        action="store_true",
+        help="Run contextual AI review on findings using local Gemma (Ollama) or configured cloud provider.",
+    )
+    ai_group.add_argument(
+        "--provider",
+        choices=["auto", "ollama", "gemini", "openai", "groq"],
+        default="auto",
+        help="AI provider for review (default: auto; uses GEMINI_API_KEY if present, otherwise local Ollama).",
+    )
+    ai_group.add_argument(
+        "--model",
+        metavar="MODEL_NAME",
+        help="AI model name override (default: gemma3:4b for Ollama, gemini-1.5-flash for Gemini).",
+    )
+    ai_group.add_argument(
+        "--ai-endpoint",
+        metavar="URL",
+        help="Custom API endpoint URL for AI inference.",
+    )
+    ai_group.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Permit non-loopback endpoints for Ollama (disabled by default for privacy).",
+    )
+    ai_group.add_argument(
+        "--ai-timeout",
+        type=int,
+        default=60,
+        metavar="SECONDS",
+        help="HTTP request timeout for AI inference in seconds (default: 60).",
+    )
+
     return parser
 
 
@@ -909,6 +944,63 @@ def main() -> int:
     else:
         report = scanner.scan_diff_content(diff_content, scan_mode=scan_mode)
 
+    # AI Contextual Review
+    ai_text_output = ""
+    if args.ai and not errors:
+        findings_count = report.get("summary", {}).get("total", 0)
+        if findings_count == 0:
+            if args.format != "json":
+                ai_text_output = (
+                    "====================================================================\n"
+                    "  GIT SECURITY SENTINEL - AI SECURITY REVIEW\n"
+                    "====================================================================\n"
+                    "Status: SKIPPED (Diff is clean - zero findings require remediation)\n"
+                    "===================================================================="
+                )
+            else:
+                report["ai_review"] = {
+                    "status": "skipped",
+                    "reason": "Diff is clean; no findings to triage.",
+                }
+        else:
+            sanitized_diff = scanner.generate_sanitized_diff(diff_content)
+            try:
+                try:
+                    from scripts.ai_review import run_ai_review
+                except ImportError:
+                    try:
+                        from ai_review import run_ai_review
+                    except ImportError:
+                        sys.path.insert(0, str(Path(__file__).parent))
+                        from ai_review import run_ai_review
+
+                success, ai_result, ai_formatted = run_ai_review(
+                    report_data=report,
+                    sanitized_diff=sanitized_diff,
+                    provider=args.provider,
+                    model=args.model,
+                    endpoint=args.ai_endpoint,
+                    allow_remote=args.allow_remote,
+                    timeout_sec=args.ai_timeout,
+                    format_mode=args.format,
+                )
+                if args.format == "json":
+                    report["ai_review"] = ai_result
+                else:
+                    ai_text_output = ai_formatted
+            except Exception as e:
+                err_msg = f"Failed to execute AI contextual reviewer: {e}"
+                if args.format == "json":
+                    report["ai_review"] = {"status": "error", "error": err_msg}
+                else:
+                    ai_text_output = (
+                        "====================================================================\n"
+                        "  GIT SECURITY SENTINEL - AI REVIEWER ERROR\n"
+                        "====================================================================\n"
+                        f"{err_msg}\n"
+                        "===================================================================="
+                    )
+
     # Output sanitized diff if requested
     if args.redacted_diff_out:
         out_patch_path = args.redacted_diff_out
@@ -930,6 +1022,9 @@ def main() -> int:
         print(json.dumps(report, indent=2))
     else:
         print(format_text_report(report))
+        if ai_text_output:
+            print()
+            print(ai_text_output)
 
     return evaluate_exit_code(report, args.severity_threshold)
 

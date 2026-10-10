@@ -47,10 +47,14 @@ Clarify or determine which changes the user wishes to inspect:
 - **All local changes** (staged + unstaged): Use `--all`
 - **Branch / PR comparison**: Use `--base <branch_name>` (e.g., `--base main`)
 
-### Step 3: Run the Deterministic Scanner
-Run `scripts/scan_diff.py` with structured JSON output and write the report to a temporary or designated file:
+### Step 3: Run the Scanner (Unified Deterministic + AI)
+Run `scripts/scan_diff.py` with structured JSON output:
 ```bash
+# Deterministic scan only:
 python scripts/scan_diff.py --all --format json --output scan-report.json
+
+# Unified Scan with Local Gemma 3 / Ollama Review:
+python scripts/scan_diff.py --all --ai --provider ollama --model gemma3:4b --format json --output scan-report.json
 ```
 To generate a sanitized patch where all detected secrets are masked:
 ```bash
@@ -77,20 +81,23 @@ Group findings by severity (`critical`, `high`, `medium`, `low`) and rule catego
 
 For comprehensive rule definitions and limitations, consult `references/detection-rules.md`.
 
-### Step 6: Optional AI Contextual Review
-Review findings using local Ollama or cloud models (Google AI Studio, Groq, OpenAI) with zero third-party dependencies:
+### Step 6: AI Contextual Review & Code Remediation
+Review findings using local Gemma (Ollama) or cloud models (Google AI Studio, Groq, OpenAI) with zero third-party dependencies:
 ```bash
-# 1. Local Ollama (100% Private, Zero Key, loopback):
+# 1. Unified Staged / Diff Scan with AI:
+python scripts/scan_diff.py --staged --ai --provider ollama --model gemma3:4b
+
+# 2. Standalone Local Ollama Review:
 python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
 
-# 2. Google AI Studio (Gemini API via GEMINI_API_KEY):
+# 3. Google AI Studio (Gemini API via GEMINI_API_KEY):
 python scripts/ai_review.py --report scan-report.json --provider gemini --model gemini-1.5-flash
 
-# 3. Groq or OpenAI (via GROQ_API_KEY / OPENAI_API_KEY):
+# 4. Groq or OpenAI (via GROQ_API_KEY / OPENAI_API_KEY):
 python scripts/ai_review.py --report scan-report.json --provider groq --model llama-3.3-70b-versatile
 python scripts/ai_review.py --report scan-report.json --provider openai --model gpt-4o-mini
 
-# 4. Machine-Readable Structured JSON Assessment:
+# 5. Machine-Readable Structured JSON Assessment:
 python scripts/ai_review.py --report scan-report.json --format json --output ai-review.json
 ```
 *Note*: The AI reviewer operates strictly as advisory context. When `--format json` is requested, the output includes structured fields (`assessment: genuine_risk | likely_false_positive | context_dependent`, `risk_explanation`, `safe_alternative`) for easy automated triage. Never allow the AI review to remove deterministic scanner findings or modify exit codes.
