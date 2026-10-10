@@ -107,7 +107,52 @@ def query_ollama(
         return False, None, f"Unexpected error querying Ollama: {e}"
 
 
-def build_system_prompt() -> str:
+def extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
+    """Extract and parse JSON object from LLM output, gracefully stripping code fences."""
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+
+    try:
+        return json.loads(cleaned)
+    except Exception:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                return json.loads(cleaned[start : end + 1])
+            except Exception:
+                pass
+    return None
+
+
+def build_system_prompt(format_mode: str = "text") -> str:
+    if format_mode == "json":
+        return (
+            "You are an expert Application Security Engineer reviewing static security scanner findings for Git diffs. "
+            "Your task is to provide concise, actionable, and contextual security triage. "
+            "Distinguish probable true positives from likely false positives (such as test fixtures, mocks, or benign dev configs). "
+            "Respond ONLY with a single valid JSON object matching this schema:\n"
+            "{\n"
+            '  "summary": "High-level summary of risks in this diff",\n'
+            '  "reviews": [\n'
+            "    {\n"
+            '      "rule_id": "string",\n'
+            '      "file": "string",\n'
+            '      "line": 0,\n'
+            '      "assessment": "genuine_risk | likely_false_positive | context_dependent",\n'
+            '      "risk_explanation": "string",\n'
+            '      "safe_alternative": "string"\n'
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "Return valid JSON only. Do not add markdown explanation outside the JSON."
+        )
     return (
         "You are an expert Application Security Engineer reviewing static security scanner findings for Git diffs. "
         "Your task is to provide concise, actionable, and contextual security triage. "
@@ -119,7 +164,7 @@ def build_system_prompt() -> str:
     )
 
 
-def build_user_prompt(report_data: Dict[str, Any], sanitized_diff: Optional[str] = None) -> str:
+def build_user_prompt(report_data: Dict[str, Any], sanitized_diff: Optional[str] = None, format_mode: str = "text") -> str:
     findings = report_data.get("findings", [])
     license_info = report_data.get("license", {})
     summary = report_data.get("summary", {})
@@ -146,7 +191,6 @@ def build_user_prompt(report_data: Dict[str, Any], sanitized_diff: Optional[str]
             )
 
     if sanitized_diff:
-        # Include a trimmed snippet of the sanitized diff (up to 3000 chars) for extra context
         trimmed_diff = sanitized_diff[:3000]
         if len(sanitized_diff) > 3000:
             trimmed_diff += "\n... [diff truncated for length] ..."
@@ -157,9 +201,12 @@ def build_user_prompt(report_data: Dict[str, Any], sanitized_diff: Optional[str]
         prompt_parts.append("```")
 
     prompt_parts.append("")
-    prompt_parts.append(
-        "Provide your contextual security evaluation. For each finding, evaluate whether it is likely a true vulnerability or a false positive, explain why, and suggest the safest alternative."
-    )
+    if format_mode == "json":
+        prompt_parts.append("Evaluate each finding and return the requested structured JSON object.")
+    else:
+        prompt_parts.append(
+            "Provide your contextual security evaluation. For each finding, evaluate whether it is likely a true vulnerability or a false positive, explain why, and suggest the safest alternative."
+        )
 
     return "\n".join(prompt_parts)
 
@@ -171,19 +218,32 @@ def format_ai_review_report(
     review_text: Optional[str],
     error_msg: Optional[str],
     report_data: Dict[str, Any],
+    format_mode: str = "text",
 ) -> Dict[str, Any]:
     """Structure the combined scan and AI review output."""
-    return {
+    structured_data = None
+    if review_text and format_mode == "json":
+        structured_data = extract_json_from_text(review_text)
+
+    out: Dict[str, Any] = {
         "reviewer": "git-security-sentinel-ai",
         "version": VERSION,
         "inference_engine": "ollama",
         "model": model,
         "endpoint": endpoint,
+        "format": format_mode,
         "inference_completed": available and bool(review_text),
         "error": error_msg,
         "original_summary": report_data.get("summary", {}),
-        "ai_review": review_text,
     }
+
+    if structured_data is not None:
+        out["structured_review"] = structured_data
+        out["ai_review"] = review_text
+    else:
+        out["ai_review"] = review_text
+
+    return out
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -302,6 +362,7 @@ def main() -> int:
             review_text=None,
             error_msg=error_info,
             report_data=report_data,
+            format_mode=args.format,
         )
 
         if args.format == "json":
@@ -322,8 +383,8 @@ def main() -> int:
         return 0
 
     # 5. Build prompt and query Ollama
-    system_prompt = build_system_prompt()
-    user_prompt = build_user_prompt(report_data, sanitized_diff)
+    system_prompt = build_system_prompt(format_mode=args.format)
+    user_prompt = build_user_prompt(report_data, sanitized_diff, format_mode=args.format)
 
     print(f"Connecting to local Ollama at {args.endpoint} (model: {args.model})...", file=sys.stderr)
     success, review_text, err_msg = query_ollama(
@@ -341,6 +402,7 @@ def main() -> int:
         review_text=review_text if success else None,
         error_msg=err_msg if not success else None,
         report_data=report_data,
+        format_mode=args.format,
     )
 
     if args.format == "json":

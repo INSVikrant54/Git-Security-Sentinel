@@ -6,13 +6,14 @@ Complies with the Agent Skills Open Standard (https://agentskills.io/specificati
 """
 
 import argparse
+from dataclasses import asdict, dataclass, field
 import json
 import os
 import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Pattern, Tuple
 
 VERSION = "1.0.0"
 SCANNER_NAME = "git-security-sentinel"
@@ -29,9 +30,87 @@ SEVERITY_ORDER = {
     "info": 0,
 }
 
+
+@dataclass
+class Finding:
+    """Represents a single detected security or compliance finding."""
+    rule_id: str
+    category: str
+    severity: str
+    confidence: str
+    file: str
+    line: int
+    message: str
+    evidence: str
+    recommendation: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class LicenseStatus:
+    """Represents the status of repository root license compliance."""
+    root_license_present: bool
+    license_file: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ScanSummary:
+    """Statistical summary of findings broken down by severity level."""
+    total: int = 0
+    critical: int = 0
+    high: int = 0
+    medium: int = 0
+    low: int = 0
+
+    def to_dict(self) -> Dict[str, int]:
+        return asdict(self)
+
+
+@dataclass
+class ScanReport:
+    """Complete structured security scan report."""
+    scanner: str = SCANNER_NAME
+    version: str = VERSION
+    status: str = "completed"
+    scan_mode: str = "all"
+    findings: List[Finding] = field(default_factory=list)
+    license: LicenseStatus = field(default_factory=lambda: LicenseStatus(False))
+    summary: ScanSummary = field(default_factory=ScanSummary)
+    errors: List[str] = field(default_factory=list)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "scanner": self.scanner,
+            "version": self.version,
+            "status": self.status,
+            "scan_mode": self.scan_mode,
+            "findings": [f.to_dict() for f in self.findings],
+            "license": self.license.to_dict(),
+            "summary": self.summary.to_dict(),
+            "errors": self.errors,
+        }
+
+
+@dataclass
+class Rule:
+    """Rule definition for secret and code pattern scanning."""
+    rule_id: str
+    category: str
+    severity: str
+    confidence: str
+    pattern: Pattern[str]
+    message: str
+    recommendation: str
+    validator: Optional[Callable[[re.Match, str], bool]] = None
+
+
 # Detection rules definition
-# Each rule contains: id, category, severity, confidence, regex patterns, message, recommendation
-DETECTION_RULES = [
+DETECTION_RULES: List[Dict[str, Any]] = [
     {
         "rule_id": "secret.aws_access_key",
         "category": "secrets",
@@ -472,38 +551,125 @@ class GitSecurityScanner:
                     redacted_evidence = "[REDACTED]"
 
                 findings.append(
-                    {
-                        "rule_id": rule_id,
-                        "category": category,
-                        "severity": severity,
-                        "confidence": confidence,
-                        "file": file_path,
-                        "line": line_no,
-                        "message": message,
-                        "evidence": redacted_evidence,
-                        "recommendation": recommendation,
-                    }
+                    Finding(
+                        rule_id=rule_id,
+                        category=category,
+                        severity=severity,
+                        confidence=confidence,
+                        file=file_path,
+                        line=line_no,
+                        message=message,
+                        evidence=redacted_evidence,
+                        recommendation=recommendation,
+                    )
                 )
 
         # Summary calculations
-        summary = {
-            "total": len(findings),
-            "critical": sum(1 for f in findings if f["severity"] == "critical"),
-            "high": sum(1 for f in findings if f["severity"] == "high"),
-            "medium": sum(1 for f in findings if f["severity"] == "medium"),
-            "low": sum(1 for f in findings if f["severity"] == "low"),
-        }
+        summary = ScanSummary(
+            total=len(findings),
+            critical=sum(1 for f in findings if f.severity == "critical"),
+            high=sum(1 for f in findings if f.severity == "high"),
+            medium=sum(1 for f in findings if f.severity == "medium"),
+            low=sum(1 for f in findings if f.severity == "low"),
+        )
 
-        return {
-            "scanner": SCANNER_NAME,
-            "version": VERSION,
-            "status": "completed",
-            "scan_mode": scan_mode,
-            "findings": findings,
-            "license": license_info,
-            "summary": summary,
-            "errors": [],
-        }
+        lic_status = LicenseStatus(
+            root_license_present=license_info.get("root_license_present", False),
+            license_file=license_info.get("license_file"),
+        )
+
+        report = ScanReport(
+            scanner=SCANNER_NAME,
+            version=VERSION,
+            status="completed",
+            scan_mode=scan_mode,
+            findings=findings,
+            license=lic_status,
+            summary=summary,
+            errors=[],
+        )
+        return report.to_dict()
+
+    def scan_diff_report(self, diff_content: str, scan_mode: str) -> ScanReport:
+        """
+        Parse diff content and return a typed ScanReport dataclass instance.
+        """
+        parser = UnifiedDiffParser()
+        added_lines = parser.parse(diff_content)
+        license_info = self.check_license()
+
+        findings: List[Finding] = []
+        seen_finding_keys = set()
+
+        for item in added_lines:
+            file_path = item["file"]
+            line_no = item["line"]
+            raw_content = item["content"]
+
+            for rule in DETECTION_RULES:
+                rule_id = rule["rule_id"]
+                category = rule["category"]
+                severity = rule["severity"]
+                confidence = rule["confidence"]
+                pattern = rule["pattern"]
+                message = rule["message"]
+                recommendation = rule["recommendation"]
+
+                match = pattern.search(raw_content)
+                if not match:
+                    continue
+
+                if rule_id == "secret.generic_credential":
+                    matched_val = match.group(1) if match.groups() else match.group(0)
+                    if is_benign_generic_value(matched_val):
+                        continue
+
+                dup_key = (rule_id, file_path, line_no)
+                if dup_key in seen_finding_keys:
+                    continue
+                seen_finding_keys.add(dup_key)
+
+                redacted_evidence = redact_text(raw_content.strip())
+                if rule_id.startswith("secret.") and match.group(0) in redacted_evidence:
+                    redacted_evidence = "[REDACTED]"
+
+                findings.append(
+                    Finding(
+                        rule_id=rule_id,
+                        category=category,
+                        severity=severity,
+                        confidence=confidence,
+                        file=file_path,
+                        line=line_no,
+                        message=message,
+                        evidence=redacted_evidence,
+                        recommendation=recommendation,
+                    )
+                )
+
+        summary = ScanSummary(
+            total=len(findings),
+            critical=sum(1 for f in findings if f.severity == "critical"),
+            high=sum(1 for f in findings if f.severity == "high"),
+            medium=sum(1 for f in findings if f.severity == "medium"),
+            low=sum(1 for f in findings if f.severity == "low"),
+        )
+
+        lic_status = LicenseStatus(
+            root_license_present=license_info.get("root_license_present", False),
+            license_file=license_info.get("license_file"),
+        )
+
+        return ScanReport(
+            scanner=SCANNER_NAME,
+            version=VERSION,
+            status="completed",
+            scan_mode=scan_mode,
+            findings=findings,
+            license=lic_status,
+            summary=summary,
+            errors=[],
+        )
 
     def generate_sanitized_diff(self, diff_content: str) -> str:
         """

@@ -442,6 +442,78 @@ class TestAIReviewer(unittest.TestCase):
             self.assertIsNone(text)
             self.assertIn("HTTP Error 404", err)
 
+    # 23. Dataclass Models and ScanReport Tests
+    def test_dataclass_models(self):
+        finding = scan_diff.Finding(
+            rule_id="secret.aws_access_key",
+            category="secrets",
+            severity="critical",
+            confidence="high",
+            file="app.py",
+            line=10,
+            message="Test message",
+            evidence="[REDACTED:AWS_KEY_ID]",
+            recommendation="Rotate key",
+        )
+        self.assertEqual(finding.rule_id, "secret.aws_access_key")
+        d = finding.to_dict()
+        self.assertIsInstance(d, dict)
+        self.assertEqual(d["file"], "app.py")
+
+        summary = scan_diff.ScanSummary(total=1, critical=1)
+        self.assertEqual(summary.to_dict()["critical"], 1)
+
+        lic = scan_diff.LicenseStatus(root_license_present=True, license_file="LICENSE")
+        self.assertTrue(lic.to_dict()["root_license_present"])
+
+        report = scan_diff.ScanReport(
+            findings=[finding],
+            summary=summary,
+            license=lic,
+        )
+        report_dict = report.to_dict()
+        self.assertEqual(report_dict["summary"]["total"], 1)
+        self.assertEqual(len(report_dict["findings"]), 1)
+
+    # 24. Structured AI Review JSON Mode Extraction
+    def test_ai_review_structured_json_mode(self):
+        sample_json_str = json.dumps({
+            "summary": "High risk AWS key found",
+            "reviews": [{
+                "rule_id": "secret.aws_access_key",
+                "file": "app.py",
+                "line": 10,
+                "assessment": "genuine_risk",
+                "risk_explanation": "Exposed cloud credential",
+                "safe_alternative": "Use AWS IAM roles"
+            }]
+        })
+
+        # Test extraction from raw json string
+        parsed = ai_review.extract_json_from_text(sample_json_str)
+        self.assertIsNotNone(parsed)
+        self.assertEqual(parsed["summary"], "High risk AWS key found")
+
+        # Test extraction from markdown code fences
+        fenced_json = f"```json\n{sample_json_str}\n```"
+        parsed_fenced = ai_review.extract_json_from_text(fenced_json)
+        self.assertIsNotNone(parsed_fenced)
+        self.assertEqual(len(parsed_fenced["reviews"]), 1)
+
+        # Test formatting structured report
+        report_data = {"summary": {"total": 1}}
+        formatted = ai_review.format_ai_review_report(
+            model="gemma3:4b",
+            endpoint="http://127.0.0.1:11434",
+            available=True,
+            review_text=fenced_json,
+            error_msg=None,
+            report_data=report_data,
+            format_mode="json",
+        )
+        self.assertIn("structured_review", formatted)
+        self.assertEqual(formatted["structured_review"]["reviews"][0]["assessment"], "genuine_risk")
+
 
 if __name__ == "__main__":
     unittest.main()

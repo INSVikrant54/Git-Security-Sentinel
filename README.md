@@ -254,13 +254,17 @@ ollama pull gemma3:4b
 # 1. Run the static scanner to generate the report
 python scripts/scan_diff.py --all --output scan-report.json --redacted-diff-out sanitized.patch
 
-# 2. Run the contextual AI reviewer
+# 2. Run contextual AI review (Human-readable Markdown format by default)
 python scripts/ai_review.py --report scan-report.json --diff sanitized.patch --model gemma3:4b
+
+# 3. Run machine-readable AI review (Structured JSON format for autonomous AI agents & CI bots)
+python scripts/ai_review.py --report scan-report.json --diff sanitized.patch --model gemma3:4b --format json --output ai-review.json
 ```
 
 ### AI Model Terms & Verification
 - **Model**: `gemma3:4b` (Google Gemma 3 open-weight model family).
 - **Terms**: Governed by the Gemma Terms of Use.
+- **Structured Schema**: In `--format json` mode, the reviewer outputs validated JSON with `assessment` (`genuine_risk | likely_false_positive | context_dependent`), `risk_explanation`, and `safe_alternative` for each finding.
 - **Alternative Models**: Any Ollama-compatible instruction model (e.g., `llama3.2:3b`, `mistral:7b`, `phi4:mini`) can be passed via `--model <name>`.
 
 ---

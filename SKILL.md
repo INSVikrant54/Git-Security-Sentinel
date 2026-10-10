@@ -80,9 +80,13 @@ For comprehensive rule definitions and limitations, consult `references/detectio
 ### Step 6: Optional Local AI Contextual Review
 If a local Ollama server is installed and running on the loopback interface (`http://127.0.0.1:11434`), execute the contextual reviewer:
 ```bash
+# For developer-facing markdown summary:
 python scripts/ai_review.py --report scan-report.json --model gemma3:4b
+
+# For machine-readable structured JSON assessment:
+python scripts/ai_review.py --report scan-report.json --model gemma3:4b --format json --output ai-review.json
 ```
-*Note*: The AI reviewer operates strictly as advisory context. Never allow the AI review to remove deterministic scanner findings or modify exit codes. If Ollama is unavailable, proceed with static triage.
+*Note*: The AI reviewer operates strictly as advisory context. When `--format json` is requested, the output includes structured fields (`assessment: genuine_risk | likely_false_positive | context_dependent`, `risk_explanation`, `safe_alternative`) for easy automated triage. Never allow the AI review to remove deterministic scanner findings or modify exit codes. If Ollama is unavailable, proceed with static triage.
 
 ### Step 7: Present Clear Developer Summary
 Deliver an actionable, non-alarmist summary:
