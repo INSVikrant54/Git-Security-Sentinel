@@ -7,7 +7,7 @@
 [![Agent Skills Open Standard](https://img.shields.io/badge/Standard-Agent%20Skills%20v1.0-emerald)](https://agentskills.io/specification)
 [![CI](https://github.com/INSVikrant54/Git-Security-Sentinel/actions/workflows/security-scan.yml/badge.svg)](https://github.com/INSVikrant54/Git-Security-Sentinel/actions)
 [![Zero Runtime Dependencies](https://img.shields.io/badge/Dependencies-Zero%20(stdlib%20only)-success)](scripts/scan_diff.py)
-[![Privacy First](https://img.shields.io/badge/AI%20Privacy-Loopback%20Only%20(Ollama)-purple)](scripts/ai_review.py)
+[![AI Models](https://img.shields.io/badge/AI%20Models-Gemma%204%20%7C%20Ollama%20%7C%20Gemini-purple)](scripts/ai_review.py)
 
 ---
 
@@ -26,7 +26,7 @@ Accidental credential exposure remains one of the most common causes of infrastr
 - **Privacy Trade-offs of Cloud Code Reviewers**: Many modern AI review platforms send private source code diffs to third-party hosted cloud APIs, introducing data leakage risks for proprietary codebases.
 - **Complex Dependency Chains**: Traditional static security platforms often require heavy node or python virtual environments, complex docker containers, or SaaS subscriptions just to inspect pre-commit changes.
 
-**Git Security Sentinel** solves this by delivering **instant deterministic scanning** using Python standard library alone, complemented by **100% private local AI contextual review** running on developer hardware.
+**Git Security Sentinel** solves this by delivering **instant deterministic scanning** using Python standard library alone, complemented by **privacy-preserving AI contextual review** running either locally (Gemma via Ollama) or through Google AI Studio (default: Gemma 4 31B).
 
 ---
 
@@ -39,10 +39,10 @@ Git Security Sentinel operates via two decoupled layers:
    - Fast, transparent regex rule engine matching verified credential patterns and unsafe dynamic constructs.
    - Hunk-aware unified Git diff parser that pinpoints exact file paths and added line numbers.
    - Deterministic redaction pipeline that scrubs matching tokens before printing or exporting.
-2. **Local AI Security Reviewer (`scripts/ai_review.py`)**:
-   - Optional contextual layer powered by local open-weight language models (e.g. `gemma3:4b`) via [Ollama](https://ollama.com).
-   - Evaluates whether findings are true security risks or benign test fixtures.
-   - Operates strictly over loopback interfaces (`127.0.0.1`); code never leaves the local machine.
+2. **Contextual AI Security Reviewer (`scripts/ai_review.py`)**:
+   - Automated contextual layer powered by local open-weight language models (e.g. `gemma3:4b` via [Ollama](https://ollama.com)) or Google AI Studio (default: `gemma-4-31b-it`).
+   - Evaluates whether findings are true security risks or benign test fixtures and generates safe code fixes.
+   - In-memory secret masking ensures credentials are never sent to AI models unredacted.
 
 ---
 
@@ -50,7 +50,7 @@ Git Security Sentinel operates via two decoupled layers:
 
 - ⚡ **Zero Runtime Dependencies**: Runs immediately on any Python 3.9+ installation without `pip install`.
 - 🛡️ **Guaranteed Secret Redaction**: Deterministically masks secrets (`[REDACTED]`) in CLI output, JSON reports, sanitized patches, and AI prompts.
-- 🔒 **Private Local AI Triage**: Contextual reasoning via local Ollama models; no cloud telemetry or external API calls.
+- 🔒 **Privacy-First AI Triage**: Contextual reasoning via local Ollama models (zero telemetry) or Google AI Studio with pre-redacted diffs.
 - 🎯 **Flexible Scope**: Granular scanning options for `--staged`, `--unstaged`, `--all`, `--base <branch>`, or diff files via stdin.
 - 📦 **Agent Skills Open Standard**: Complete `SKILL.md` ready for integration with compatible AI agent environments.
 - 📜 **Open-Source Compliance**: Verifies the presence of root license files (`LICENSE`, `LICENSE.md`, etc.).
@@ -428,23 +428,7 @@ jobs:
 
 ---
 
-## 16. Testing Instructions
-
-The test suite in `tests/test_scan_diff.py` uses Python's standard `unittest` framework:
-
-```bash
-# Run all unit and integration tests with verbose output
-python -m unittest discover -s tests -p "test_*.py" -v
-
-# Verify compilation of all scripts
-python -m py_compile scripts/scan_diff.py scripts/ai_review.py tests/test_scan_diff.py
-```
-
-All credential fixtures in `tests/test_scan_diff.py` are generated **dynamically in memory** using string concatenation to avoid triggering false alarms in static scanners inspecting this repository.
-
----
-
-## 17. Known Limitations and False Positives
+## 16. Known Limitations and False Positives
 
 - **Static Scope**: Static regular expressions cannot determine whether a detected API key is active or functional in external third-party services.
 - **Obfuscated Credentials**: Tokens generated dynamically via string concatenation or environment decoders cannot be detected by static regex scanning alone.
@@ -452,7 +436,7 @@ All credential fixtures in `tests/test_scan_diff.py` are generated **dynamically
 
 ---
 
-## 18. Threat Model and Non-Goals
+## 17. Threat Model and Non-Goals
 
 ### In Scope
 - Detecting accidental credential commits in Git diffs.
@@ -468,19 +452,19 @@ All credential fixtures in `tests/test_scan_diff.py` are generated **dynamically
 
 ---
 
-## 19. Contribution Guidelines
+## 18. Contribution Guidelines
 
 Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code style, test expectations, and pull request workflow.
 
 ---
 
-## 20. Roadmap
+## 19. Roadmap
 
 - [x] Deterministic diff scanning for staged, unstaged, and base branch changes.
 - [x] In-memory secret redaction pipeline.
 - [x] Root license verification.
 - [x] Agent Skills Open Standard (`SKILL.md`) integration.
-- [x] Privacy-preserving local Ollama AI contextual reviewer.
+- [x] Universal AI contextual reviewer (Local Ollama Gemma & Google AI Studio Gemma 4).
 - [x] GitHub Actions multi-version CI workflow.
 - [ ] Pre-commit hook installer (`python scripts/scan_diff.py --install-hook`).
 - [ ] Custom user rule configuration file (`.sentinelrules.json`).
@@ -488,15 +472,15 @@ Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md
 
 ---
 
-## 21. License
+## 20. License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for complete terms.
 
 ---
 
-## 22. Hacktoberfest Hack Day Ranchi 2026 Submission Context
+## 21. Hacktoberfest Hack Day Ranchi 2026 Submission Context
 
 - **Category**: Best Open-Source AI Project
 - **Event**: Hacktoberfest Hack Day Ranchi 2026
 - **Specification**: Conforms to the [Agent Skills Open Standard](https://agentskills.io/specification).
-- **Core Value Proposition**: Demonstrating that open-source AI security tools can be private, transparent, dependency-free, and accessible to any developer without cloud dependencies or paid APIs.
+- **Core Value Proposition**: Demonstrating that open-source AI security tools can be private, transparent, dependency-free, and accessible to any developer with either zero-key local models (Gemma on Ollama) or hosted AI APIs (Google AI Studio Gemma 4).
