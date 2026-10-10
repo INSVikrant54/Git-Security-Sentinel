@@ -197,6 +197,16 @@ python scripts/scan_diff.py --help
 python scripts/scan_diff.py --staged
 ```
 
+> **💡 Pro-Tip: 1-Word Shortcut (`git scan`)**  
+> Teach Git to run the staged scanner automatically by adding an alias:  
+> ```bash
+> git config alias.scan "!python scripts/scan_diff.py --staged"
+> ```  
+> From then on, simply run:  
+> ```bash
+> git scan
+> ```
+
 ### Scan Unstaged Changes (Working Tree Review)
 ```bash
 python scripts/scan_diff.py --unstaged
