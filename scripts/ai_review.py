@@ -30,7 +30,7 @@ PROVIDER_DEFAULTS = {
         "env_var": None,
     },
     "gemini": {
-        "model": "gemini-1.5-flash",
+        "model": "gemini-2.5-flash",
         "endpoint": "https://generativelanguage.googleapis.com",
         "env_var": "GEMINI_API_KEY",
     },
@@ -167,7 +167,15 @@ def query_gemini(
 ) -> Tuple[bool, Optional[str], Optional[str]]:
     """Query Google AI Studio Gemini API using standard library urllib.request."""
     clean_key = api_key.strip()
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={clean_key}"
+    clean_model = model.strip()
+    if clean_model.startswith("models/"):
+        clean_model = clean_model[len("models/"):]
+    if clean_model in {"gemma", "gemma-4", "gemma4", "gemma-2-9b-it"}:
+        clean_model = "gemma-4-26b-a4b-it"
+    elif clean_model == "gemini-1.5-flash":
+        clean_model = "gemini-2.5-flash"
+
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{clean_model}:generateContent?key={clean_key}"
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
         "system_instruction": {"parts": [{"text": system_prompt}]},
