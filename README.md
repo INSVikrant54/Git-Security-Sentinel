@@ -233,39 +233,50 @@ python scripts/scan_diff.py --all --severity-threshold medium
 
 ---
 
-## 11. Local AI Setup and Usage
+## 11. AI Reviewer Setup & Multi-Provider Guide
 
-The AI reviewer is an optional, local-only contextual enhancement powered by open-weight models via Ollama.
+The AI reviewer is an optional contextual enhancement supporting **local open-weight models** (via Ollama) as well as **cloud AI providers** (Google AI Studio, Groq, OpenAI) using Python's standard library (`urllib.request`) with zero pip dependencies.
 
-### 1. Install and Start Ollama
-Download Ollama from [ollama.com](https://ollama.com) and start the local daemon:
+### Option A: Local Ollama (100% Private, Zero Key, Offline)
+1. Install and start Ollama from [ollama.com](https://ollama.com): `ollama serve`
+2. Pull Gemma 3: `ollama pull gemma3:4b`
+3. Run the review:
+   ```bash
+   python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
+   ```
+
+### Option B: Google AI Studio (Gemini API)
+1. Get a free API key from [aistudio.google.com](https://aistudio.google.com).
+2. Set your environment variable:
+   ```powershell
+   $env:GEMINI_API_KEY = "your_google_ai_studio_api_key"
+   ```
+3. Run the review (automatically selects Gemini):
+   ```bash
+   python scripts/ai_review.py --report scan-report.json --provider gemini --model gemini-1.5-flash
+   ```
+
+### Option C: Groq or OpenAI
+1. Set the respective API key:
+   ```powershell
+   $env:GROQ_API_KEY = "gsk_..."      # For ultra-fast Groq Llama-3.3-70B
+   $env:OPENAI_API_KEY = "sk-..."     # For OpenAI GPT-4o-mini
+   ```
+2. Run the review:
+   ```bash
+   python scripts/ai_review.py --report scan-report.json --provider groq --model llama-3.3-70b-versatile
+   python scripts/ai_review.py --report scan-report.json --provider openai --model gpt-4o-mini
+   ```
+
+### Option D: Machine-Readable Structured JSON Mode (For AI Agents & Bots)
+Add `--format json` to any provider command to receive validated JSON triage:
 ```bash
-ollama serve
+python scripts/ai_review.py --report scan-report.json --format json --output ai-review.json
 ```
-
-### 2. Pull Recommended Open-Weight Model
-We recommend **Gemma 3 (4B)** as a fast, balanced open-weight instruction model suitable for developer laptops:
-```bash
-ollama pull gemma3:4b
-```
-
-### 3. Run AI Review on a Scan Report
-```bash
-# 1. Run the static scanner to generate the report
-python scripts/scan_diff.py --all --output scan-report.json --redacted-diff-out sanitized.patch
-
-# 2. Run contextual AI review (Human-readable Markdown format by default)
-python scripts/ai_review.py --report scan-report.json --diff sanitized.patch --model gemma3:4b
-
-# 3. Run machine-readable AI review (Structured JSON format for autonomous AI agents & CI bots)
-python scripts/ai_review.py --report scan-report.json --diff sanitized.patch --model gemma3:4b --format json --output ai-review.json
-```
-
-### AI Model Terms & Verification
-- **Model**: `gemma3:4b` (Google Gemma 3 open-weight model family).
-- **Terms**: Governed by the Gemma Terms of Use.
-- **Structured Schema**: In `--format json` mode, the reviewer outputs validated JSON with `assessment` (`genuine_risk | likely_false_positive | context_dependent`), `risk_explanation`, and `safe_alternative` for each finding.
-- **Alternative Models**: Any Ollama-compatible instruction model (e.g., `llama3.2:3b`, `mistral:7b`, `phi4:mini`) can be passed via `--model <name>`.
+In `--format json` mode, findings are structured with:
+- `assessment`: `genuine_risk | likely_false_positive | context_dependent`
+- `risk_explanation`: Contextual threat explanation.
+- `safe_alternative`: Remediation snippet or pattern.
 
 ---
 

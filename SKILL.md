@@ -77,16 +77,23 @@ Group findings by severity (`critical`, `high`, `medium`, `low`) and rule catego
 
 For comprehensive rule definitions and limitations, consult `references/detection-rules.md`.
 
-### Step 6: Optional Local AI Contextual Review
-If a local Ollama server is installed and running on the loopback interface (`http://127.0.0.1:11434`), execute the contextual reviewer:
+### Step 6: Optional AI Contextual Review
+Review findings using local Ollama or cloud models (Google AI Studio, Groq, OpenAI) with zero third-party dependencies:
 ```bash
-# For developer-facing markdown summary:
-python scripts/ai_review.py --report scan-report.json --model gemma3:4b
+# 1. Local Ollama (100% Private, Zero Key, loopback):
+python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
 
-# For machine-readable structured JSON assessment:
-python scripts/ai_review.py --report scan-report.json --model gemma3:4b --format json --output ai-review.json
+# 2. Google AI Studio (Gemini API via GEMINI_API_KEY):
+python scripts/ai_review.py --report scan-report.json --provider gemini --model gemini-1.5-flash
+
+# 3. Groq or OpenAI (via GROQ_API_KEY / OPENAI_API_KEY):
+python scripts/ai_review.py --report scan-report.json --provider groq --model llama-3.3-70b-versatile
+python scripts/ai_review.py --report scan-report.json --provider openai --model gpt-4o-mini
+
+# 4. Machine-Readable Structured JSON Assessment:
+python scripts/ai_review.py --report scan-report.json --format json --output ai-review.json
 ```
-*Note*: The AI reviewer operates strictly as advisory context. When `--format json` is requested, the output includes structured fields (`assessment: genuine_risk | likely_false_positive | context_dependent`, `risk_explanation`, `safe_alternative`) for easy automated triage. Never allow the AI review to remove deterministic scanner findings or modify exit codes. If Ollama is unavailable, proceed with static triage.
+*Note*: The AI reviewer operates strictly as advisory context. When `--format json` is requested, the output includes structured fields (`assessment: genuine_risk | likely_false_positive | context_dependent`, `risk_explanation`, `safe_alternative`) for easy automated triage. Never allow the AI review to remove deterministic scanner findings or modify exit codes.
 
 ### Step 7: Present Clear Developer Summary
 Deliver an actionable, non-alarmist summary:

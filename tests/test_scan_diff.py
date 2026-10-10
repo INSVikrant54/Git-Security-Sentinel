@@ -504,6 +504,7 @@ class TestAIReviewer(unittest.TestCase):
         report_data = {"summary": {"total": 1}}
         formatted = ai_review.format_ai_review_report(
             model="gemma3:4b",
+            provider="ollama",
             endpoint="http://127.0.0.1:11434",
             available=True,
             review_text=fenced_json,
@@ -513,6 +514,81 @@ class TestAIReviewer(unittest.TestCase):
         )
         self.assertIn("structured_review", formatted)
         self.assertEqual(formatted["structured_review"]["reviews"][0]["assessment"], "genuine_risk")
+
+    # 25. Provider Detection Logic Test
+    def test_provider_detection(self):
+        # Default with no keys set
+        with patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(ai_review.detect_provider("auto"), "ollama")
+            self.assertEqual(ai_review.detect_provider(), "ollama")
+
+        # Gemini key set
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy_key"}, clear=True):
+            self.assertEqual(ai_review.detect_provider("auto"), "gemini")
+
+        # Groq key set
+        with patch.dict(os.environ, {"GROQ_API_KEY": "dummy_key"}, clear=True):
+            self.assertEqual(ai_review.detect_provider("auto"), "groq")
+
+        # OpenAI key set
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "dummy_key"}, clear=True):
+            self.assertEqual(ai_review.detect_provider("auto"), "openai")
+
+        # Explicit request overrides environment
+        with patch.dict(os.environ, {"GEMINI_API_KEY": "dummy_key"}, clear=True):
+            self.assertEqual(ai_review.detect_provider("openai"), "openai")
+            self.assertEqual(ai_review.detect_provider("ollama"), "ollama")
+
+    # 26. Mocked Google AI Studio Gemini API Test
+    def test_mocked_gemini_inference(self):
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.read.return_value = json.dumps({
+            "candidates": [{
+                "content": {
+                    "parts": [{"text": "Gemini review: Risk verified."}]
+                }
+            }]
+        }).encode("utf-8")
+
+        mock_context = MagicMock()
+        mock_context.__enter__.return_value = mock_response
+
+        with patch("urllib.request.urlopen", return_value=mock_context):
+            success, text, err = ai_review.query_gemini(
+                api_key="synthetic_test_key",
+                model="gemini-1.5-flash",
+                prompt="test prompt",
+                system_prompt="test system",
+            )
+            self.assertTrue(success)
+            self.assertEqual(text, "Gemini review: Risk verified.")
+            self.assertIsNone(err)
+
+    # 27. Mocked OpenAI-Compatible API Test
+    def test_mocked_openai_inference(self):
+        mock_response = MagicMock()
+        mock_response.status = 200
+        mock_response.read.return_value = json.dumps({
+            "choices": [{
+                "message": {"content": "OpenAI review: Potential vulnerability."}
+            }]
+        }).encode("utf-8")
+
+        mock_context = MagicMock()
+        mock_context.__enter__.return_value = mock_response
+
+        with patch("urllib.request.urlopen", return_value=mock_context):
+            success, text, err = ai_review.query_openai_compatible(
+                endpoint="https://api.openai.com/v1/chat/completions",
+                api_key="synthetic_test_key",
+                model="gpt-4o-mini",
+                prompt="test prompt",
+                system_prompt="test system",
+            )
+            self.assertTrue(success)
+            self.assertEqual(text, "OpenAI review: Potential vulnerability.")
+            self.assertIsNone(err)
 
 
 if __name__ == "__main__":

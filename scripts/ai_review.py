@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """
-Git Security Sentinel - Local AI Security Reviewer
-Optional, privacy-preserving contextual reviewer for Git Security Sentinel reports.
-Connects strictly to a local Ollama instance (default: loopback only).
+Git Security Sentinel - Universal AI Security Reviewer
+Contextual security reviewer for Git Security Sentinel reports.
+Supports local open-weight models via Ollama (default: loopback only) and
+cloud models via Google AI Studio (Gemini), Groq, and OpenAI with pre-redacted privacy.
 Complies with the Agent Skills Open Standard (https://agentskills.io/specification).
 """
 
@@ -18,11 +19,64 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 VERSION = "1.0.0"
-DEFAULT_MODEL = "gemma3:4b"
-DEFAULT_ENDPOINT = "http://127.0.0.1:11434"
 DEFAULT_TIMEOUT_SEC = 60
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1", "0.0.0.0"}
+
+PROVIDER_DEFAULTS = {
+    "ollama": {
+        "model": "gemma3:4b",
+        "endpoint": "http://127.0.0.1:11434",
+        "env_var": None,
+    },
+    "gemini": {
+        "model": "gemini-1.5-flash",
+        "endpoint": "https://generativelanguage.googleapis.com",
+        "env_var": "GEMINI_API_KEY",
+    },
+    "openai": {
+        "model": "gpt-4o-mini",
+        "endpoint": "https://api.openai.com/v1/chat/completions",
+        "env_var": "OPENAI_API_KEY",
+    },
+    "groq": {
+        "model": "llama-3.3-70b-versatile",
+        "endpoint": "https://api.groq.com/openai/v1/chat/completions",
+        "env_var": "GROQ_API_KEY",
+    },
+}
+
+
+def load_env_file(env_path: Optional[Path] = None) -> None:
+    """Load environment variables from a local .env file if it exists, without third-party packages."""
+    target = env_path or (Path.cwd() / ".env")
+    if not target.is_file():
+        return
+    try:
+        for line in target.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k = k.strip()
+            v = v.strip().strip("'\"")
+            if k and k not in os.environ:
+                os.environ[k] = v
+    except Exception:
+        pass
+
+
+def detect_provider(requested: Optional[str] = None) -> str:
+    """Determine provider based on user request or environment variable detection."""
+    if requested and requested.lower() != "auto":
+        return requested.lower()
+    if os.environ.get("GEMINI_API_KEY"):
+        return "gemini"
+    if os.environ.get("GROQ_API_KEY"):
+        return "groq"
+    if os.environ.get("OPENAI_API_KEY"):
+        return "openai"
+    return "ollama"
 
 
 def is_loopback_url(url: str) -> bool:
@@ -60,10 +114,7 @@ def query_ollama(
     system_prompt: str,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
 ) -> Tuple[bool, Optional[str], Optional[str]]:
-    """
-    Send prompt to Ollama /api/generate without streaming.
-    Returns: (success, response_text, error_message)
-    """
+    """Send prompt to Ollama /api/generate without streaming."""
     url = f"{endpoint.rstrip('/')}/api/generate"
     payload = {
         "model": model,
@@ -105,6 +156,114 @@ def query_ollama(
         return False, None, f"Inference request timed out after {timeout_sec} seconds."
     except Exception as e:
         return False, None, f"Unexpected error querying Ollama: {e}"
+
+
+def query_gemini(
+    api_key: str,
+    model: str,
+    prompt: str,
+    system_prompt: str,
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Query Google AI Studio Gemini API using standard library urllib.request."""
+    clean_key = api_key.strip()
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={clean_key}"
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "system_instruction": {"parts": [{"text": system_prompt}]},
+        "generationConfig": {
+            "temperature": 0.2,
+        },
+    }
+
+    try:
+        data_bytes = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url,
+            data=data_bytes,
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": f"git-security-sentinel-ai-reviewer/{VERSION}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            if resp.status == 200:
+                resp_json = json.loads(resp.read().decode("utf-8"))
+                candidates = resp_json.get("candidates", [])
+                if candidates and "content" in candidates[0]:
+                    parts = candidates[0]["content"].get("parts", [])
+                    if parts and "text" in parts[0]:
+                        return True, parts[0]["text"], None
+                return False, None, "Gemini API returned an empty candidate list."
+            return False, None, f"Gemini API returned HTTP status {resp.status}"
+    except urllib.error.HTTPError as e:
+        error_body = ""
+        try:
+            error_body = e.read().decode("utf-8")
+        except Exception:
+            pass
+        return False, None, f"Gemini HTTP Error {e.code}: {e.reason}. Details: {error_body}"
+    except urllib.error.URLError as e:
+        return False, None, f"Connection error contacting Gemini: {e.reason}"
+    except TimeoutError:
+        return False, None, f"Inference request timed out after {timeout_sec} seconds."
+    except Exception as e:
+        return False, None, f"Unexpected error querying Gemini API: {e}"
+
+
+def query_openai_compatible(
+    endpoint: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    system_prompt: str,
+    timeout_sec: int = DEFAULT_TIMEOUT_SEC,
+) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Query OpenAI-compatible endpoint (OpenAI, Groq, Mistral, OpenRouter)."""
+    clean_key = api_key.strip()
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }
+
+    try:
+        data_bytes = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            endpoint,
+            data=data_bytes,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {clean_key}",
+                "User-Agent": f"git-security-sentinel-ai-reviewer/{VERSION}",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            if resp.status == 200:
+                resp_json = json.loads(resp.read().decode("utf-8"))
+                choices = resp_json.get("choices", [])
+                if choices and "message" in choices[0]:
+                    return True, choices[0]["message"].get("content", ""), None
+                return False, None, "API returned an empty choices list."
+            return False, None, f"API returned HTTP status {resp.status}"
+    except urllib.error.HTTPError as e:
+        error_body = ""
+        try:
+            error_body = e.read().decode("utf-8")
+        except Exception:
+            pass
+        return False, None, f"API HTTP Error {e.code}: {e.reason}. Details: {error_body}"
+    except urllib.error.URLError as e:
+        return False, None, f"Connection error: {e.reason}"
+    except TimeoutError:
+        return False, None, f"Inference request timed out after {timeout_sec} seconds."
+    except Exception as e:
+        return False, None, f"Unexpected error querying API: {e}"
 
 
 def extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
@@ -213,6 +372,7 @@ def build_user_prompt(report_data: Dict[str, Any], sanitized_diff: Optional[str]
 
 def format_ai_review_report(
     model: str,
+    provider: str,
     endpoint: str,
     available: bool,
     review_text: Optional[str],
@@ -228,9 +388,9 @@ def format_ai_review_report(
     out: Dict[str, Any] = {
         "reviewer": "git-security-sentinel-ai",
         "version": VERSION,
-        "inference_engine": "ollama",
+        "provider": provider,
         "model": model,
-        "endpoint": endpoint,
+        "endpoint": endpoint if provider == "ollama" else "[CLOUD_PROVIDER]",
         "format": format_mode,
         "inference_completed": available and bool(review_text),
         "error": error_msg,
@@ -249,12 +409,22 @@ def format_ai_review_report(
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ai_review.py",
-        description="Git Security Sentinel: Local AI Security Reviewer via Ollama.",
+        description="Git Security Sentinel: Multi-Provider AI Security Reviewer.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
+  # 1. Local Ollama (Default, 100% Private, Zero Key):
   python scripts/ai_review.py --report scan-report.json
-  python scripts/ai_review.py --report scan-report.json --model gemma3:4b
-  python scripts/ai_review.py --report scan-report.json --diff sanitized.patch --output ai-review.md
+  python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
+
+  # 2. Google AI Studio (Gemini):
+  python scripts/ai_review.py --report scan-report.json --provider gemini --model gemini-1.5-flash
+
+  # 3. OpenAI or Groq:
+  python scripts/ai_review.py --report scan-report.json --provider openai --model gpt-4o-mini
+  python scripts/ai_review.py --report scan-report.json --provider groq --model llama-3.3-70b-versatile
+
+  # 4. Machine-Readable Structured JSON Mode:
+  python scripts/ai_review.py --report scan-report.json --format json --output ai-review.json
 """,
     )
 
@@ -270,21 +440,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Optional path to sanitized diff patch file for contextual inspection.",
     )
     parser.add_argument(
+        "--provider",
+        choices=["auto", "ollama", "gemini", "openai", "groq"],
+        default="auto",
+        help="Inference provider to use (default: auto detects based on API keys, or falls back to ollama).",
+    )
+    parser.add_argument(
         "--model",
-        default=DEFAULT_MODEL,
         metavar="MODEL_NAME",
-        help=f"Ollama model name (default: {DEFAULT_MODEL}).",
+        help="Model name (defaults to provider's recommended model if omitted).",
     )
     parser.add_argument(
         "--endpoint",
-        default=DEFAULT_ENDPOINT,
         metavar="URL",
-        help=f"Local Ollama API endpoint (default: {DEFAULT_ENDPOINT}).",
+        help="Custom API endpoint (defaults to provider's standard endpoint).",
     )
     parser.add_argument(
         "--allow-remote",
         action="store_true",
-        help="Explicitly permit non-loopback endpoints (disabled by default for privacy).",
+        help="Explicitly permit non-loopback endpoints for Ollama (disabled by default for privacy).",
     )
     parser.add_argument(
         "--timeout",
@@ -309,19 +483,53 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    load_env_file()
     parser = build_arg_parser()
     args = parser.parse_args()
 
-    # 1. Privacy Check: Enforce loopback endpoint
-    if not args.allow_remote and not is_loopback_url(args.endpoint):
-        sys.stderr.write(
-            f"Error: Non-loopback endpoint '{args.endpoint}' rejected for privacy. "
-            f"By default, Git Security Sentinel only communicates with local Ollama instances (127.0.0.1 / localhost). "
-            f"Use --allow-remote to explicitly override.\n"
-        )
-        return 2
+    # 1. Determine active provider
+    provider = detect_provider(args.provider)
+    defaults = PROVIDER_DEFAULTS.get(provider, PROVIDER_DEFAULTS["ollama"])
+    model = args.model or defaults["model"]
+    endpoint = args.endpoint or defaults["endpoint"]
 
-    # 2. Read scan report
+    # 2. Provider validation & Authentication checks
+    api_key: Optional[str] = None
+    if provider == "ollama":
+        if not args.allow_remote and not is_loopback_url(endpoint):
+            sys.stderr.write(
+                f"Error: Non-loopback endpoint '{endpoint}' rejected for privacy. "
+                f"By default, Ollama requests must connect to local loopback (127.0.0.1 / localhost). "
+                f"Use --allow-remote to explicitly override.\n"
+            )
+            return 2
+    elif provider == "gemini":
+        api_key = os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            sys.stderr.write(
+                "Error: Google AI Studio requires GEMINI_API_KEY environment variable.\n"
+                "Set it via PowerShell: $env:GEMINI_API_KEY = 'your_key_here'\n"
+                "Or define GEMINI_API_KEY in a local .env file.\n"
+            )
+            return 2
+    elif provider == "openai":
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            sys.stderr.write(
+                "Error: OpenAI provider requires OPENAI_API_KEY environment variable.\n"
+                "Set it via PowerShell: $env:OPENAI_API_KEY = 'your_key_here'\n"
+            )
+            return 2
+    elif provider == "groq":
+        api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            sys.stderr.write(
+                "Error: Groq provider requires GROQ_API_KEY environment variable.\n"
+                "Set it via PowerShell: $env:GROQ_API_KEY = 'your_key_here'\n"
+            )
+            return 2
+
+    # 3. Read scan report
     report_path = Path(args.report)
     if not report_path.is_file():
         sys.stderr.write(f"Error: Scan report file '{args.report}' does not exist.\n")
@@ -333,7 +541,7 @@ def main() -> int:
         sys.stderr.write(f"Error: Failed to parse scan report JSON '{args.report}': {e}\n")
         return 2
 
-    # 3. Read optional sanitized diff
+    # 4. Read optional sanitized diff
     sanitized_diff = None
     if args.diff:
         diff_path = Path(args.diff)
@@ -343,61 +551,91 @@ def main() -> int:
             except Exception as e:
                 sys.stderr.write(f"Warning: Could not read diff file '{args.diff}': {e}\n")
 
-    # 4. Check Ollama availability
-    available, avail_msg = check_ollama_available(args.endpoint, timeout_sec=5)
-    if not available:
-        error_info = (
-            f"Local Ollama server is not reachable at {args.endpoint}.\n"
-            f"Details: {avail_msg}\n\n"
-            f"To enable AI contextual review:\n"
-            f"  1. Install Ollama: https://ollama.com\n"
-            f"  2. Start the Ollama daemon: `ollama serve`\n"
-            f"  3. Pull the recommended open-weight model: `ollama pull {args.model}`\n"
-            f"  4. Re-run this command."
-        )
-        out_structure = format_ai_review_report(
-            model=args.model,
-            endpoint=args.endpoint,
-            available=False,
-            review_text=None,
-            error_msg=error_info,
-            report_data=report_data,
-            format_mode=args.format,
-        )
-
-        if args.format == "json":
-            out_str = json.dumps(out_structure, indent=2)
-        else:
-            out_str = (
-                "====================================================================\n"
-                "  GIT SECURITY SENTINEL - LOCAL AI REVIEWER\n"
-                "====================================================================\n"
-                f"Status: INFERENCE SKIPPED (Ollama Unavailable)\n\n"
-                f"{error_info}\n"
-                "====================================================================\n"
+    # 5. Handle Ollama availability check if provider is ollama
+    if provider == "ollama":
+        available, avail_msg = check_ollama_available(endpoint, timeout_sec=5)
+        if not available:
+            error_info = (
+                f"Local Ollama server is not reachable at {endpoint}.\n"
+                f"Details: {avail_msg}\n\n"
+                f"To enable AI contextual review:\n"
+                f"  1. Install Ollama: https://ollama.com\n"
+                f"  2. Start the Ollama daemon: `ollama serve`\n"
+                f"  3. Pull the recommended open-weight model: `ollama pull {model}`\n"
+                f"  4. Re-run this command.\n\n"
+                f"Alternative: If you have an API key, use cloud providers:\n"
+                f"  python scripts/ai_review.py --report {args.report} --provider gemini --model gemini-1.5-flash"
+            )
+            out_structure = format_ai_review_report(
+                model=model,
+                provider=provider,
+                endpoint=endpoint,
+                available=False,
+                review_text=None,
+                error_msg=error_info,
+                report_data=report_data,
+                format_mode=args.format,
             )
 
-        print(out_str)
-        if args.output:
-            Path(args.output).write_text(out_str, encoding="utf-8")
-        return 0
+            if args.format == "json":
+                out_str = json.dumps(out_structure, indent=2)
+            else:
+                out_str = (
+                    "====================================================================\n"
+                    "  GIT SECURITY SENTINEL - LOCAL AI REVIEWER\n"
+                    "====================================================================\n"
+                    f"Status: INFERENCE SKIPPED (Ollama Unavailable)\n\n"
+                    f"{error_info}\n"
+                    "====================================================================\n"
+                )
 
-    # 5. Build prompt and query Ollama
+            print(out_str)
+            if args.output:
+                Path(args.output).write_text(out_str, encoding="utf-8")
+            return 0
+
+    # 6. Build prompt
     system_prompt = build_system_prompt(format_mode=args.format)
     user_prompt = build_user_prompt(report_data, sanitized_diff, format_mode=args.format)
 
-    print(f"Connecting to local Ollama at {args.endpoint} (model: {args.model})...", file=sys.stderr)
-    success, review_text, err_msg = query_ollama(
-        endpoint=args.endpoint,
-        model=args.model,
-        prompt=user_prompt,
-        system_prompt=system_prompt,
-        timeout_sec=args.timeout,
-    )
+    print(f"Connecting to {provider.upper()} (model: {model})...", file=sys.stderr)
 
+    # 7. Query active provider
+    success: bool = False
+    review_text: Optional[str] = None
+    err_msg: Optional[str] = None
+
+    if provider == "ollama":
+        success, review_text, err_msg = query_ollama(
+            endpoint=endpoint,
+            model=model,
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            timeout_sec=args.timeout,
+        )
+    elif provider == "gemini":
+        success, review_text, err_msg = query_gemini(
+            api_key=api_key or "",
+            model=model,
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            timeout_sec=args.timeout,
+        )
+    elif provider in {"openai", "groq"}:
+        success, review_text, err_msg = query_openai_compatible(
+            endpoint=endpoint,
+            api_key=api_key or "",
+            model=model,
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            timeout_sec=args.timeout,
+        )
+
+    # 8. Format and output report
     out_structure = format_ai_review_report(
-        model=args.model,
-        endpoint=args.endpoint,
+        model=model,
+        provider=provider,
+        endpoint=endpoint,
         available=True,
         review_text=review_text if success else None,
         error_msg=err_msg if not success else None,
@@ -410,9 +648,9 @@ def main() -> int:
     else:
         out_lines = [
             "====================================================================",
-            f"  GIT SECURITY SENTINEL - LOCAL AI REVIEW ({args.model})",
+            f"  GIT SECURITY SENTINEL - AI SECURITY REVIEW ({provider.upper()} - {model})",
             "====================================================================",
-            f"Endpoint : {args.endpoint} (Privacy-Preserving Loopback)",
+            f"Provider : {provider.upper()}",
             f"Status   : {'COMPLETED' if success else 'FAILED'}",
             "-" * 68,
         ]
