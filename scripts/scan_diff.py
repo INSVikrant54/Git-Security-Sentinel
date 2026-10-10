@@ -843,7 +843,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     ai_group.add_argument(
         "--model",
         metavar="MODEL_NAME",
-        help="AI model name override (default: gemma3:4b for Ollama, gemma-4-31b-it for Google AI Studio).",
+        help="AI model name override (default: gemma3:4b for Ollama, gemma-4-26b-a4b-it for Google AI Studio).",
     )
     ai_group.add_argument(
         "--ai-endpoint",

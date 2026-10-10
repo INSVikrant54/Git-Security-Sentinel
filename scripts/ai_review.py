@@ -30,7 +30,7 @@ PROVIDER_DEFAULTS = {
         "env_var": None,
     },
     "gemini": {
-        "model": "gemma-4-31b-it",
+        "model": "gemma-4-26b-a4b-it",
         "endpoint": "https://generativelanguage.googleapis.com",
         "env_var": "GEMINI_API_KEY",
     },
@@ -51,7 +51,12 @@ def load_env_file(env_path: Optional[Path] = None) -> None:
     """Load environment variables from a local .env file if it exists, without third-party packages."""
     target = env_path or (Path.cwd() / ".env")
     if not target.is_file():
-        return
+        # Fallback to the scanner repository root .env if cwd has no .env
+        repo_root_env = Path(__file__).resolve().parent.parent / ".env"
+        if repo_root_env.is_file():
+            target = repo_root_env
+        else:
+            return
     try:
         for line in target.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -170,10 +175,10 @@ def query_gemini(
     clean_model = model.strip()
     if clean_model.startswith("models/"):
         clean_model = clean_model[len("models/"):]
-    if clean_model.lower() in {"gemma", "gemma-4", "gemma4", "gemma-4-31b", "gemma4-31b", "gemma 4 31b", "gemma-2-9b-it"}:
-        clean_model = "gemma-4-31b-it"
-    elif clean_model.lower() in {"gemma-4-26b", "gemma4-26b"}:
+    if clean_model.lower() in {"gemma", "gemma-4", "gemma4", "gemma-4-26b", "gemma4-26b", "gemma-4-moe", "gemma-2-9b-it"}:
         clean_model = "gemma-4-26b-a4b-it"
+    elif clean_model.lower() in {"gemma-4-31b", "gemma4-31b", "gemma 4 31b"}:
+        clean_model = "gemma-4-31b-it"
     elif clean_model == "gemini-1.5-flash":
         clean_model = "gemini-2.5-flash"
 
@@ -216,7 +221,7 @@ def query_gemini(
         if e.code in {503, 429} and clean_model == "gemma-4-31b-it":
             sys.stderr.write(
                 f"Notice: Google AI Studio returned HTTP {e.code} (high demand) for {clean_model}. "
-                "Failing over to Gemma 4 MoE (gemma-4-26b-a4b-it)...\n"
+                "Failing over to fast Gemma 4 MoE (gemma-4-26b-a4b-it)...\n"
             )
             return query_gemini(
                 api_key=api_key,
@@ -229,6 +234,18 @@ def query_gemini(
     except urllib.error.URLError as e:
         return False, None, f"Connection error contacting Gemini: {e.reason}"
     except TimeoutError:
+        if clean_model == "gemma-4-31b-it":
+            sys.stderr.write(
+                f"Notice: Google AI Studio timed out on {clean_model}. "
+                "Failing over to fast Gemma 4 MoE (gemma-4-26b-a4b-it)...\n"
+            )
+            return query_gemini(
+                api_key=api_key,
+                model="gemma-4-26b-a4b-it",
+                prompt=prompt,
+                system_prompt=system_prompt,
+                timeout_sec=timeout_sec,
+            )
         return False, None, f"Inference request timed out after {timeout_sec} seconds."
     except Exception as e:
         return False, None, f"Unexpected error querying Gemini API: {e}"
