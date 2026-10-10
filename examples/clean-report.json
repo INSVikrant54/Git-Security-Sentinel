@@ -1,0 +1,19 @@
+{
+  "scanner": "git-security-sentinel",
+  "version": "1.0.0",
+  "status": "completed",
+  "scan_mode": "all",
+  "findings": [],
+  "license": {
+    "root_license_present": true,
+    "license_file": "LICENSE"
+  },
+  "summary": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  },
+  "errors": []
+}

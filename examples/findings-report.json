@@ -1,0 +1,75 @@
+{
+  "scanner": "git-security-sentinel",
+  "version": "1.0.0",
+  "status": "completed",
+  "scan_mode": "all",
+  "findings": [
+    {
+      "rule_id": "secret.aws_access_key",
+      "category": "secrets",
+      "severity": "critical",
+      "confidence": "high",
+      "file": "deploy/terraform/main.tf",
+      "line": 42,
+      "message": "Potential AWS Access Key ID detected.",
+      "evidence": "access_key = \"[REDACTED:AWS_KEY_ID]\"",
+      "recommendation": "Never hardcode AWS keys. Use environment variables (AWS_ACCESS_KEY_ID), IAM roles, or AWS Secrets Manager."
+    },
+    {
+      "rule_id": "secret.github_token",
+      "category": "secrets",
+      "severity": "critical",
+      "confidence": "high",
+      "file": "src/services/github_sync.py",
+      "line": 18,
+      "message": "Potential GitHub personal access or OAuth token detected.",
+      "evidence": "gh_token = \"[REDACTED:GITHUB_TOKEN]\"",
+      "recommendation": "Revoke and rotate the GitHub token immediately in GitHub Settings > Developer settings."
+    },
+    {
+      "rule_id": "secret.slack_token",
+      "category": "secrets",
+      "severity": "high",
+      "confidence": "high",
+      "file": "alerts/notify.py",
+      "line": 27,
+      "message": "Potential Slack API bot or user token detected.",
+      "evidence": "slack_client = SlackClient(\"[REDACTED:SLACK_TOKEN]\")",
+      "recommendation": "Revoke the Slack token via the Slack API admin dashboard and use secure secret injection."
+    },
+    {
+      "rule_id": "risk.eval_execution",
+      "category": "insecure_code",
+      "severity": "medium",
+      "confidence": "medium",
+      "file": "src/parser/calculator.py",
+      "line": 56,
+      "message": "Potentially unsafe dynamic code execution using eval() or exec().",
+      "evidence": "result = eval(formula_expression)",
+      "recommendation": "Avoid eval()/exec() with dynamic or user-influenced data to prevent arbitrary code execution (CWE-95). Use ast.literal_eval() or safe parser alternatives."
+    },
+    {
+      "rule_id": "risk.localhost_endpoint",
+      "category": "configuration",
+      "severity": "low",
+      "confidence": "high",
+      "file": "src/config/api.json",
+      "line": 12,
+      "message": "Hardcoded local loopback URL endpoint detected in code.",
+      "evidence": "\"backend_url\": \"http://localhost:8080/api/v1\"",
+      "recommendation": "Ensure development endpoints are parameterized via environment variables before deploying to production."
+    }
+  ],
+  "license": {
+    "root_license_present": true,
+    "license_file": "LICENSE"
+  },
+  "summary": {
+    "total": 5,
+    "critical": 2,
+    "high": 1,
+    "medium": 1,
+    "low": 1
+  },
+  "errors": []
+}
