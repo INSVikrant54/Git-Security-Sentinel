@@ -52,13 +52,13 @@ It inspects Git diffs for leaked API keys, tokens, connection strings, sensitive
 - 🔒 **Guaranteed In-Memory Secret Redaction**: Deterministic sanitization replaces secrets with typed `[REDACTED:<TYPE>]` tokens before terminal rendering, JSON reporting, SARIF export, or AI prompt delivery. Negative lookahead ensures specific vendor tokens are never overwritten by generic credential regexes.
 - 📊 **OASIS SARIF 2.1.0 Schema Compliance**: Export scan results directly to SARIF (`--format sarif`) for instant integration with GitHub Code Scanning alerts and security dashboards.
 - 🪝 **One-Command Setup**: `git scan --init` creates starter config, ignore rules, `.env.example`, and installs the pre-commit hook automatically — no manual file creation.
-- 🪝 **Pre-Commit Framework & Direct Hook Installer**: Drop-in `.pre-commit-hooks.yaml` support or direct installation into `.git/hooks/pre-commit` via `git-scan --install-hook`.
+- 🪝 **Pre-Commit Framework & Direct Hook Installer**: Drop-in `.pre-commit-hooks.yaml` support or direct installation into `.git/hooks/pre-commit` via `git scan --install-hook`.
 - 🔕 **Granular False-Positive Suppression**: Support for line-level `# nosec` and `# sentinel:ignore` comments, polyglot syntax (`#`, `//`, `--`, `/* */`), rule-specific directives, `.sentinelignore` path exclusions, and CLI `--exclude`.
 - 📋 **Baseline Migration for Legacy Codebases**: Suppress known historical debt with `--baseline .sentinel.baseline` using stable SHA-256 fingerprints resilient to line shifts.
 - ⚙️ **Pure Stdlib Configuration**: Load project defaults from `.sentinel.yaml` or `.sentinel.toml` parsed completely with standard library utilities (no PyYAML required).
 - 🤖 **Contextual AI Reviewer with `--fix` & `--cost-estimate`**: AI triage supporting local Gemma via Ollama (100% offline and loopback-restricted) as well as Google AI Studio, OpenAI, and Groq. Generates non-mutating remediation diffs and transparent USD query cost estimations.
 - 🧭 **Low-Effort CLI**: `git scan` and `git scan --ai` work with no flags; `--oneline`, `--explain <rule>`, `--completion <shell>`, and `--format github` keep daily use and CI simple.
-- 🔄 **Self-Update Capability**: Integrated 24-hour cached PyPI version checker and one-command upgrade via `git-scan --upgrade`.
+- 🔄 **Self-Update Capability**: 24-hour cached version checker, `git scan --version` update hints, and one-command upgrade via `git scan --update` (or `--upgrade`) with support for custom package indexes.
 
 ---
 
@@ -187,6 +187,16 @@ git scan --format github                                   # inline PR annotatio
 git scan --base main --format sarif --output results.sarif # GitHub Code Scanning
 ```
 
+### Update the tool
+```bash
+git scan --version    # shows current version and any available update
+git scan --update     # update to the latest release (alias: git scan --upgrade)
+```
+Use a non-default index when needed:
+```bash
+git scan --update --index-url https://test.pypi.org/simple/
+```
+
 ---
 
 ## 6. CLI Reference
@@ -196,12 +206,13 @@ git scan --base main --format sarif --output results.sarif # GitHub Code Scannin
 The primary scanner CLI inspects diffs, evaluates rules, filters suppressions, and formats findings:
 
 ```
-usage: git-scan [-h] [scan] [--staged | --unstaged | --all | --base BRANCH |
+usage: git scan [-h] [--staged | --unstaged | --all | --base BRANCH |
                 --diff-file FILE] [--version] [--repo-root PATH]
                 [--format {text,json,sarif,github}] [--init] [--explain RULE_ID]
                 [--completion {powershell,bash,zsh,fish}] [--oneline]
                 [--key NAME=VALUE] [--install-hook] [--force]
-                [--upgrade] [--no-update-check] [--output FILE]
+                [--update] [--upgrade] [--index-url URL] [--no-update-check]
+                [--output FILE]
                 [--redacted-diff-out FILE]
                 [--severity-threshold {critical,high,medium,low}]
                 [--exclude PATTERN] [--baseline FILE] [--create-baseline]
@@ -211,7 +222,7 @@ usage: git-scan [-h] [scan] [--staged | --unstaged | --all | --base BRANCH |
                 [--ai-timeout SECONDS] [--fix] [--cost-estimate]
 ```
 
-The same CLI is available as a Git subcommand — `git scan --ai` is equivalent to `git-scan --ai` (Git delegates `git scan` to the `git-scan` executable).
+**`git scan` is the signature command.** Git delegates `git scan ...` to the installed `git-scan` executable. The hyphenated form (`git-scan ...`) still works for backwards compatibility.
 
 #### Diff Scope Options (Mutually Exclusive)
 - `--staged`: Scan staged (index/cached) git changes.
@@ -243,9 +254,11 @@ The same CLI is available as a Git subcommand — `git scan --ai` is equivalent 
 - `--completion {powershell,bash,zsh,fish}`: Print a shell completion script, then exit.
 - `--install-hook`: Install pre-commit hook into `.git/hooks/pre-commit`.
 - `--force`: Overwrite existing starter files or non-sentinel hook during `--init`/`--install-hook`.
-- `--upgrade`: Upgrade package to latest release from PyPI.
-- `--no-update-check`: Disable automatic 24-hour background PyPI version check.
-- `--version`: Print version number and exit.
+- `--update`: Update to the latest release (preferred form).
+- `--upgrade`: Alias of `--update`.
+- `--index-url <URL>`: Package index base URL for update checks and upgrades (e.g. `https://test.pypi.org/simple/` or a private mirror).
+- `--no-update-check`: Disable automatic 24-hour background update check.
+- `--version`: Print the version and any available update hint, then exit.
 
 #### Inline AI Review Options
 - `--ai`: Run contextual AI review on findings.
@@ -376,10 +389,10 @@ tests/fixtures/**
 When introducing Git Security Sentinel to existing projects:
 ```bash
 # Capture current known issues into a baseline:
-git-scan --all --create-baseline > .sentinel.baseline
+git scan --all --create-baseline > .sentinel.baseline
 
 # Scan changes while ignoring historical findings:
-git-scan --staged --baseline .sentinel.baseline
+git scan --staged --baseline .sentinel.baseline
 ```
 Baseline entries use SHA-256 stable fingerprints computed from rule ID, relative path, and normalized code content, remaining valid even if line numbers shift due to unrelated edits.
 
@@ -404,10 +417,10 @@ If you prefer not to manage the `pre-commit` Python package, install the hook di
 
 ```bash
 # Install pre-commit hook into .git/hooks/pre-commit:
-git-scan --install-hook
+git scan --install-hook
 
 # Overwrite existing hook script if needed:
-git-scan --install-hook --force
+git scan --install-hook --force
 ```
 
 ---

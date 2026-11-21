@@ -15,9 +15,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Working AI Configuration**: `.sentinel.yaml` / `.sentinel.toml` `ai` settings (`provider`, `model`, `endpoint`, `allow_remote`, `timeout`) are now applied, with `SENTINEL_AI_*` environment defaults and CLI flags taking precedence.
 - **Developer-Friendly Output & Discovery**: `--oneline` for concise findings, `--explain <rule-id>` for rule guidance, `--completion {powershell,bash,zsh,fish}` for shell completions, and `--format github` for inline PR annotations.
 - **Smart Default Scope**: `git scan` with no scope flag scans staged changes when any exist, otherwise all uncommitted changes.
+- **Self-Update Improvements**: `git scan --update` is the preferred update command (`--upgrade` remains an alias); `git scan --version` reports available updates; `--index-url` supports TestPyPI and private mirrors for both checks and upgrades.
+- **Signature Command**: `git scan ...` (with a space) is now the documented primary form across README and Agent Skill; the hyphenated `git-scan ...` executable remains for compatibility.
 
 ### Fixed
 - Windows scans no longer crash on non-ASCII Git output: subprocess output is decoded as UTF-8 with replacement instead of the system code page.
+- Version comparison now handles pre-releases and post-releases correctly (e.g. `1.2.0rc1` is older than `1.2.0`).
+- Console output avoids Unicode symbols that fail on Windows code-page terminals.
 
 ### Changed
 - `--provider` now defaults to config/env/auto-detection instead of always `auto`; `--format` accepts `github`; `--force` applies to `--init` as well as hook installation.

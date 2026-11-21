@@ -39,15 +39,17 @@ Git Security Sentinel provides both global console scripts and backwards-compati
 | Operation | Global Console Script | Backwards-Compatible Wrapper |
 |---|---|---|
 | One-Command Setup | `git scan --init` | `python -m git_security_sentinel --init` |
+| Update the Tool | `git scan --update` | `python -m git_security_sentinel --update` |
+| Custom Package Index | `git scan --update --index-url <URL>` | `python -m git_security_sentinel --update --index-url <URL>` |
 | Scan + AI (no flags) | `git scan --ai` | `python -m git_security_sentinel --ai` |
 | Concise Output | `git scan --oneline` | `python -m git_security_sentinel --oneline` |
 | Explain a Rule | `git scan --explain <rule-id>` | `python -m git_security_sentinel --explain <rule-id>` |
-| Shell Completions | `git-scan --completion powershell` | `python -m git_security_sentinel --completion powershell` |
+| Shell Completions | `git scan --completion powershell` | `python -m git_security_sentinel --completion powershell` |
 | GitHub PR Annotations | `git scan --format github` | `python -m git_security_sentinel --format github` |
-| Scan Staged Diff | `git-scan --staged` | `python scripts/scan_diff.py --staged` |
-| Scan Working Changes | `git-scan --unstaged` | `python scripts/scan_diff.py --unstaged` |
-| Scan All Local Changes | `git-scan --all` | `python scripts/scan_diff.py --all` |
-| Scan PR vs Base Branch | `git-scan --base main` | `python scripts/scan_diff.py --base main` |
+| Scan Staged Diff | `git scan --staged` | `python scripts/scan_diff.py --staged` |
+| Scan Working Changes | `git scan --unstaged` | `python scripts/scan_diff.py --unstaged` |
+| Scan All Local Changes | `git scan --all` | `python scripts/scan_diff.py --all` |
+| Scan PR vs Base Branch | `git scan --base main` | `python scripts/scan_diff.py --base main` |
 | Direct Module Invocation | `python -m git_security_sentinel --all` | N/A |
 | Standalone AI Reviewer | `git-sentinel-ai --report <file>` | `python scripts/ai_review.py --report <file>` |
 
@@ -59,8 +61,9 @@ Git Security Sentinel provides both global console scripts and backwards-compati
 Check for the presence of the scanner and confirm the current working directory is a valid Git repository:
 ```bash
 git rev-parse --is-inside-work-tree
-git-scan --version
+git scan --version
 ```
+`git scan --version` also reports any available update. To upgrade: `git scan --update` (alias: `git scan --upgrade`).
 *Fallback*: If `git-scan` is not on the system `PATH`, invoke the module directly: `python -m git_security_sentinel --version` or use `python scripts/scan_diff.py --version`.
 
 ### Step 1b: Bootstrap the Repository (one command)
@@ -74,24 +77,24 @@ This creates `.sentinel.yaml`, `.sentinelignore`, `.env.example`, and installs t
 ### Step 2: Determine Scan Scope & Directives
 Identify which changes should be inspected:
 - **Default (recommended)**: `git scan` — staged changes if any exist, otherwise all uncommitted changes.
-- **Pre-commit hook / Staged changes**: `git-scan --staged`
-- **Working directory changes**: `git-scan --unstaged`
-- **Full working state**: `git-scan --all`
-- **Pull request comparison**: `git-scan --base <target_branch>` (e.g. `--base main`)
-- **Arbitrary diff input**: `git-scan --diff-file <path>` or pipe diff via stdin `git diff | git-scan --diff-file -`
+- **Pre-commit hook / Staged changes**: `git scan --staged`
+- **Working directory changes**: `git scan --unstaged`
+- **Full working state**: `git scan --all`
+- **Pull request comparison**: `git scan --base <target_branch>` (e.g. `--base main`)
+- **Arbitrary diff input**: `git scan --diff-file <path>` or pipe diff via stdin `git diff | git scan --diff-file -`
 
 ### Step 3: Run the Scanner with Structured Output
 Run the scanner with `--format json` or `--format sarif` and direct output to a report file:
 ```bash
 # Generate structured JSON report
-git-scan --all --format json --output scan-report.json
+git scan --all --format json --output scan-report.json
 
 # Generate OASIS SARIF 2.1.0 report for CI / Code Scanning
-git-scan --base main --format sarif --output results.sarif
+git scan --base main --format sarif --output results.sarif
 ```
 *Optional Sanitized Patch*: To generate a safe, shareable diff patch with all secrets redacted:
 ```bash
-git-scan --all --redacted-diff-out sanitized.patch
+git scan --all --redacted-diff-out sanitized.patch
 ```
 
 ### Step 4: Handle Suppression & Baselines
@@ -101,10 +104,10 @@ When managing legacy repositories or intended patterns:
 - **Baseline Migration**:
   ```bash
   # Step 4a: Create baseline of existing debt
-  git-scan --all --create-baseline > .sentinel.baseline
+  git scan --all --create-baseline > .sentinel.baseline
 
   # Step 4b: Enforce scanner only on newly introduced findings
-  git-scan --staged --baseline .sentinel.baseline
+  git scan --staged --baseline .sentinel.baseline
   ```
   Baseline filtering matches stable SHA-256 fingerprints, remaining immune to line number shifts caused by unrelated edits.
 
@@ -134,7 +137,7 @@ git-sentinel-ai --report scan-report.json --provider ollama --model gemma3:4b --
 git-sentinel-ai --report scan-report.json --provider gemini --cost-estimate
 
 # 4. Combined unified scan with inline AI triage and fix diffs:
-git-scan --staged --ai --fix --cost-estimate
+git scan --staged --ai --fix --cost-estimate
 ```
 
 Review outputs:
@@ -153,6 +156,6 @@ Once the developer updates the code:
 1. Instruct the developer to stage the fix: `git add <file>`
 2. Re-run verification scan:
    ```bash
-   git-scan --staged
+   git scan --staged
    ```
 3. Confirm clean exit code (`0`) before approving commit or pull request.

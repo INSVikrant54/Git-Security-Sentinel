@@ -158,6 +158,24 @@ class TestE2ECLIFlagsAndBehaviors(unittest.TestCase):
         self.assertEqual(via_git.returncode, direct.returncode, via_git.stderr)
         self.assertIn("No security issues detected", via_git.stdout)
 
+    def test_update_alias_and_index_url(self):
+        """Tier 1: `git scan --update` and custom index flags are accepted."""
+        if not HAS_PACKAGE:
+            self.skipTest("package not importable")
+        from git_security_sentinel.cli import build_arg_parser
+
+        parser = build_arg_parser()
+        args = parser.parse_args(
+            ["scan", "--update", "--index-url", "https://test.pypi.org/simple/"]
+        )
+        self.assertTrue(args.update)
+        self.assertEqual(args.index_url, "https://test.pypi.org/simple/")
+        self.assertTrue(parser.parse_args(["scan", "--upgrade"]).upgrade)
+
+        result = self._run_scanner(["scan", "--version", "--no-update-check"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("git-security-sentinel", result.stdout)
+
     def test_init_creates_starter_files_and_hook(self):
         """Tier 1: --init bootstraps config and pre-commit hook in one step."""
         subprocess.run(["git", "init", "-q"], cwd=self.temp_dir, check=True)

@@ -272,12 +272,13 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
   git scan --ai
   git scan --oneline
   git scan --explain secret.aws_access_key
+  git scan --update
   git scan --staged
   git scan --all --format json
   git scan --all --format github
   git scan --base main --format sarif --output results.sarif
-  git-scan --ai --fix --cost-estimate
-  git-scan --exclude "tests/**" --baseline .sentinel.baseline
+  git scan --ai --fix --cost-estimate
+  git scan --exclude "tests/**" --baseline .sentinel.baseline
 """,
     )
 
@@ -321,9 +322,8 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
 
     parser.add_argument(
         "--version",
-        action="version",
-        version=f"git-security-sentinel {VERSION}",
-        help="Show program's version number and exit.",
+        action="store_true",
+        help="Show version (and any available update) and exit.",
     )
     parser.add_argument(
         "--repo-root",
@@ -375,14 +375,24 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
         help="Overwrite existing starter files or pre-commit hook during --init/--install-hook.",
     )
     parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update to the latest release (alias of --upgrade).",
+    )
+    parser.add_argument(
         "--upgrade",
         action="store_true",
-        help="Upgrade git-security-sentinel to the latest release on PyPI.",
+        help="Upgrade to the latest release from the package index.",
+    )
+    parser.add_argument(
+        "--index-url",
+        metavar="URL",
+        help="Package index base URL for update checks and upgrades (e.g. TestPyPI or a private mirror).",
     )
     parser.add_argument(
         "--no-update-check",
         action="store_true",
-        help="Disable automatic 24-hour background PyPI update check.",
+        help="Disable automatic 24-hour background update check.",
     )
     parser.add_argument(
         "--output",
@@ -498,6 +508,17 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
 
     repo_path = Path(args.repo_root).resolve()
 
+    if args.version:
+        print(f"git-security-sentinel {VERSION}")
+        if not args.no_update_check:
+            try:
+                latest = check_for_pypi_update(VERSION, no_check=False, index_url=args.index_url)
+                if latest:
+                    print(f"Update available: {VERSION} -> {latest} (run 'git scan --update')")
+            except Exception:
+                pass
+        return 0
+
     if args.explain:
         return explain_rule(args.explain, json_mode=(args.format == "json"))
 
@@ -542,14 +563,14 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
     if args.install_hook:
         success, msg = install_pre_commit_hook(repo_root=repo_path, force=args.force)
         if success:
-            print(f"[✓] {msg}")
+            print(f"[OK] {msg}")
             return 0
         else:
-            sys.stderr.write(f"[✗] {msg}\n")
+            sys.stderr.write(f"[ERROR] {msg}\n")
             return 1
 
-    if args.upgrade:
-        return run_self_upgrade()
+    if args.upgrade or args.update:
+        return run_self_upgrade(index_url=args.index_url)
 
     # Load configuration (.sentinel.yaml / .sentinel.toml)
     config_data: Dict[str, Any] = {}
@@ -899,7 +920,11 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
     # PyPI background update check in non-quiet modes
     if not is_quiet and not args.no_update_check and config_data.get("update_check", True) is not False:
         try:
-            latest_ver = check_for_pypi_update(VERSION, no_check=args.no_update_check)
+            latest_ver = check_for_pypi_update(
+                VERSION,
+                no_check=args.no_update_check,
+                index_url=args.index_url,
+            )
             if latest_ver:
                 print_update_banner(VERSION, latest_ver)
         except Exception:

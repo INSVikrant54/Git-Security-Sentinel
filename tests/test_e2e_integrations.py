@@ -30,7 +30,13 @@ try:
     from git_security_sentinel.cli import main as cli_main
     from git_security_sentinel.hooks.installer import install_pre_commit_hook
     from git_security_sentinel.redaction.redactor import redact_text
-    from git_security_sentinel.update.checker import check_for_pypi_update, get_cache_file_path
+    from git_security_sentinel.update.checker import (
+        _is_newer_version,
+        check_for_pypi_update,
+        get_cache_file_path,
+        pypi_json_url,
+        run_self_upgrade,
+    )
     from git_security_sentinel.ai.cost import calculate_token_estimate, estimate_query_cost
     from git_security_sentinel.ai.prompts import build_system_prompt
     HAS_NEW_INTEGRATIONS = True
@@ -130,7 +136,7 @@ class TestE2EPreCommitHookIntegration(unittest.TestCase):
                 code = cli_main(["--install-hook", "--repo-root", str(temp_uninit)])
             self.assertEqual(code, 1)
             err_output = stderr_buf.getvalue()
-            self.assertIn("[✗]", err_output)
+            self.assertIn("[ERROR]", err_output)
             self.assertIn("Directory is not a Git repository", err_output)
         finally:
             shutil.rmtree(temp_uninit, ignore_errors=True)
@@ -138,6 +144,55 @@ class TestE2EPreCommitHookIntegration(unittest.TestCase):
 
 class TestE2EPyPIUpdateChecker(unittest.TestCase):
     """Tier 1, 2 & 3: 24-hr Cached PyPI update checker and non-intrusive stderr banner."""
+
+    def test_pre_release_and_numeric_version_comparison(self):
+        """Tier 2: Pre-releases sort before finals; numeric components compare correctly."""
+        if not HAS_NEW_INTEGRATIONS:
+            self.skipTest("update checker not available")
+        self.assertTrue(_is_newer_version("1.2.0", "1.1.0"))
+        self.assertTrue(_is_newer_version("1.10.0", "1.9.0"))
+        self.assertFalse(_is_newer_version("1.2.0rc1", "1.2.0"))
+        self.assertTrue(_is_newer_version("1.2.0", "1.2.0rc1"))
+        self.assertTrue(_is_newer_version("1.2.0.post1", "1.2.0"))
+
+    def test_custom_index_json_url(self):
+        """Tier 2: TestPyPI and custom mirrors resolve to their own JSON endpoint."""
+        if not HAS_NEW_INTEGRATIONS:
+            self.skipTest("update checker not available")
+        self.assertEqual(
+            pypi_json_url("https://test.pypi.org/simple/"),
+            "https://test.pypi.org/pypi/git-security-sentinel/json",
+        )
+        self.assertEqual(
+            pypi_json_url("https://mirror.internal.example/simple"),
+            "https://mirror.internal.example/pypi/git-security-sentinel/json",
+        )
+
+    def test_self_upgrade_passes_index_url(self):
+        """Tier 2: --index-url is forwarded to pip during self-upgrade."""
+        if not HAS_NEW_INTEGRATIONS:
+            self.skipTest("update checker not available")
+        with patch("git_security_sentinel.update.checker.subprocess.run") as mock_run:
+            mock_run.return_value.returncode = 0
+            self.assertEqual(
+                run_self_upgrade(index_url="https://test.pypi.org/simple/"),
+                0,
+            )
+            cmd = mock_run.call_args.args[0]
+            self.assertIn("--index-url", cmd)
+            self.assertIn("https://test.pypi.org/simple/", cmd)
+
+    def test_version_flag_reports_available_update(self):
+        """Tier 1: --version shows the version and any available update hint."""
+        if not HAS_NEW_INTEGRATIONS:
+            self.skipTest("update checker not available")
+        buf = io.StringIO()
+        with patch("git_security_sentinel.cli.check_for_pypi_update", return_value="9.9.9"):
+            with patch("sys.stdout", buf):
+                code = cli_main(["--version"], prog="git-scan")
+        self.assertEqual(code, 0)
+        self.assertIn("git-security-sentinel", buf.getvalue())
+        self.assertIn("git scan --update", buf.getvalue())
 
     def test_cached_update_check_bypassed_in_ci(self):
         """Tier 1: Update check is bypassed when CI=true or SENTINEL_NO_UPDATE_CHECK=1."""
