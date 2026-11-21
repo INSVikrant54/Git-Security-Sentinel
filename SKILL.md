@@ -38,6 +38,12 @@ Git Security Sentinel provides both global console scripts and backwards-compati
 
 | Operation | Global Console Script | Backwards-Compatible Wrapper |
 |---|---|---|
+| One-Command Setup | `git scan --init` | `python -m git_security_sentinel --init` |
+| Scan + AI (no flags) | `git scan --ai` | `python -m git_security_sentinel --ai` |
+| Concise Output | `git scan --oneline` | `python -m git_security_sentinel --oneline` |
+| Explain a Rule | `git scan --explain <rule-id>` | `python -m git_security_sentinel --explain <rule-id>` |
+| Shell Completions | `git-scan --completion powershell` | `python -m git_security_sentinel --completion powershell` |
+| GitHub PR Annotations | `git scan --format github` | `python -m git_security_sentinel --format github` |
 | Scan Staged Diff | `git-scan --staged` | `python scripts/scan_diff.py --staged` |
 | Scan Working Changes | `git-scan --unstaged` | `python scripts/scan_diff.py --unstaged` |
 | Scan All Local Changes | `git-scan --all` | `python scripts/scan_diff.py --all` |
@@ -57,8 +63,17 @@ git-scan --version
 ```
 *Fallback*: If `git-scan` is not on the system `PATH`, invoke the module directly: `python -m git_security_sentinel --version` or use `python scripts/scan_diff.py --version`.
 
+### Step 1b: Bootstrap the Repository (one command)
+If the repository has no `.sentinel.yaml` or pre-commit hook, run:
+```bash
+git scan --init
+```
+To store a cloud key in the same step: `git scan --init --key GEMINI_API_KEY=your-key`.
+This creates `.sentinel.yaml`, `.sentinelignore`, `.env.example`, and installs the hook automatically. **Never ask the developer to create these files manually.**
+
 ### Step 2: Determine Scan Scope & Directives
 Identify which changes should be inspected:
+- **Default (recommended)**: `git scan` — staged changes if any exist, otherwise all uncommitted changes.
 - **Pre-commit hook / Staged changes**: `git-scan --staged`
 - **Working directory changes**: `git-scan --unstaged`
 - **Full working state**: `git-scan --all`
@@ -99,22 +114,26 @@ Parse `scan-report.json` and check `status` and `findings`:
 - **Exit Code 1**: Security findings meeting or exceeding threshold detected.
 - **Exit Code 2**: Execution or configuration error.
 
-Group findings by category:
-1. `secrets`: AWS keys, Stripe, Twilio, GitHub tokens, database URIs, private keys.
-2. `sensitive_files`: `.env`, `id_rsa`, `*.pem`.
-3. `insecure_code`: Shell injection, pickle, unsafe YAML, SQL concatenation, XXE, wildcard CORS, unverified SSL, eval.
-4. `compliance`: Security TODO markers, root license absence.
+Group findings by the 5 canonical categories:
+1. `secrets` (30): AWS keys, Stripe, Twilio, GitHub tokens, database URIs, private keys, generic credentials.
+2. `sensitive_files` (4): `.env`, `id_rsa`, `*.pem`.
+3. `insecure_code` (10): Shell injection, pickle, unsafe YAML, SQL concatenation, XXE, wildcard CORS, unverified SSL, eval.
+4. `configuration` (1): Hardcoded loopback endpoint in deployed code.
+5. `compliance` (2): Security TODO markers, root license absence.
 
 ### Step 6: Invoke Contextual AI Review with `--fix` & `--cost-estimate`
-When advising the developer, invoke the AI reviewer to generate remediation diffs without modifying files on disk:
+When advising the developer, invoke the AI reviewer to generate remediation diffs without modifying files on disk. The shortest form is `git scan --ai`. Set `GEMINI_API_KEY` / `OPENAI_API_KEY` / `GROQ_API_KEY` in the environment or a local `.env` file for cloud providers; otherwise local Ollama (`gemma3:4b`) is used. Provider and model defaults may also come from the config file or `SENTINEL_AI_PROVIDER` / `SENTINEL_AI_MODEL` environment variables.
 ```bash
-# 1. Local Ollama Review with suggested remediation diffs:
+# 1. Shortest form — scan changes, then AI-triage findings:
+git scan --ai
+
+# 2. Local Ollama Review with suggested remediation diffs:
 git-sentinel-ai --report scan-report.json --provider ollama --model gemma3:4b --fix
 
-# 2. Estimate query token count and monetary cost:
+# 3. Estimate query token count and monetary cost:
 git-sentinel-ai --report scan-report.json --provider gemini --cost-estimate
 
-# 3. Combined unified scan with inline AI triage and fix diffs:
+# 4. Combined unified scan with inline AI triage and fix diffs:
 git-scan --staged --ai --fix --cost-estimate
 ```
 

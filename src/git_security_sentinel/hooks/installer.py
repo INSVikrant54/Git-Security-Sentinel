@@ -46,7 +46,8 @@ def install_pre_commit_hook(
                 ["git", "rev-parse", "--show-toplevel"],
                 cwd=str(root),
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
             if res.returncode != 0 or not res.stdout.strip():
@@ -58,7 +59,8 @@ def install_pre_commit_hook(
                 ["git", "rev-parse", "--git-dir"],
                 cwd=str(root),
                 capture_output=True,
-                text=True,
+                encoding="utf-8",
+                errors="replace",
                 check=False,
             )
             if res_dir.returncode == 0 and res_dir.stdout.strip():

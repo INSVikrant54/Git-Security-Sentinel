@@ -17,9 +17,10 @@ from git_security_sentinel.core.models import (
 )
 from git_security_sentinel.core.scanner import GitSecurityScanner
 from git_security_sentinel.config.loader import load_config
+from git_security_sentinel.hooks.bootstrap import bootstrap_project
 from git_security_sentinel.hooks.installer import install_pre_commit_hook
 from git_security_sentinel.output.sarif import generate_sarif_report
-from git_security_sentinel.rules.catalog import get_all_rules
+from git_security_sentinel.rules.catalog import get_all_rules, get_rule_by_id
 from git_security_sentinel.suppression.baseline import BaselineFilter
 from git_security_sentinel.suppression.ignore_filter import (
     PathFilter,
@@ -121,21 +122,174 @@ def evaluate_exit_code(report: Dict[str, Any], threshold: str) -> int:
     return 0
 
 
+def format_oneline_report(report: Dict[str, Any]) -> str:
+    """Concise one-line-per-finding output for daily developer use."""
+    lines: List[str] = []
+    for err in report.get("errors", []):
+        lines.append(f"[!] ERROR: {err}")
+    for f in report.get("findings", []):
+        severity = str(f.get("severity", "low")).upper()
+        lines.append(
+            f"{f.get('file')}:{f.get('line')}  [{severity}]  "
+            f"{f.get('rule_id')}  - {f.get('message')}"
+        )
+    if not lines:
+        return "OK: no security issues detected"
+    summary = report.get("summary", {})
+    lines.append(
+        f"Summary: {summary.get('total', 0)} finding(s) "
+        f"(critical {summary.get('critical', 0)}, high {summary.get('high', 0)}, "
+        f"medium {summary.get('medium', 0)}, low {summary.get('low', 0)})"
+    )
+    return "\n".join(lines)
+
+
+def format_github_report(report: Dict[str, Any]) -> str:
+    """GitHub Actions workflow commands that annotate changed lines in a PR."""
+    def escape(text: Any) -> str:
+        return (
+            str(text)
+            .replace("%", "%25")
+            .replace("\r", "%0D")
+            .replace("\n", "%0A")
+        )
+
+    levels = {"critical": "error", "high": "error", "medium": "warning", "low": "notice"}
+    lines: List[str] = []
+    for err in report.get("errors", []):
+        lines.append(f"::error::{escape(err)}")
+    for f in report.get("findings", []):
+        level = levels.get(str(f.get("severity", "low")).lower(), "warning")
+        location = f"file={escape(f.get('file', ''))},line={f.get('line', 0)}"
+        message = f"{f.get('message', '')} [{f.get('rule_id', '')}]"
+        lines.append(f"::{level} {location}::{escape(message)}")
+    return "\n".join(lines)
+
+
+def explain_rule(rule_id: str, json_mode: bool = False) -> int:
+    """Print human- or machine-readable guidance for a single detection rule."""
+    rule = get_rule_by_id(rule_id)
+    if rule is None:
+        sys.stderr.write(f"Unknown rule: {rule_id}\n")
+        return 2
+    data = {
+        "rule_id": rule.rule_id,
+        "category": rule.category,
+        "severity": rule.severity,
+        "confidence": rule.confidence,
+        "detects": rule.pattern.pattern,
+        "message": rule.message,
+        "remediation": rule.recommendation,
+        "docs": "references/detection-rules.md",
+    }
+    if json_mode:
+        print(json.dumps(data, indent=2))
+        return 0
+    print(f"Rule        : {data['rule_id']}")
+    print(f"Category    : {data['category']}  |  Severity: {data['severity']}  |  Confidence: {data['confidence']}")
+    print(f"Detects     : {data['detects']}")
+    print(f"Message     : {data['message']}")
+    print(f"Remediation : {data['remediation']}")
+    print(f"Docs        : {data['docs']}")
+    print("Suppress    : add '# nosec' to the line if it is a confirmed false positive")
+    return 0
+
+
+def generate_completion(parser: argparse.ArgumentParser, shell: str, prog: str) -> str:
+    """Generate a small shell-completion script for the scanner CLI."""
+    options = sorted(
+        opt for action in parser._actions for opt in action.option_strings if opt.startswith("-")
+    )
+    words = " ".join(options + ["scan", "--help"])
+    if shell == "powershell":
+        choices = ", ".join(f"'{w}'" for w in options + ["scan", "--help"])
+        return (
+            "Register-ArgumentCompleter -Native -CommandName 'git-scan' -ScriptBlock {\n"
+            "    param($wordToComplete, $commandAst, $cursorPosition)\n"
+            f"    @({choices}) | Where-Object {{ $_ -like \"$wordToComplete*\" }} |\n"
+            "        ForEach-Object { [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_) }\n"
+            "}\n"
+        )
+    if shell == "bash":
+        return (
+            f"_{prog.replace('-', '_')}_completion() {{\n"
+            '    local cur="${COMP_WORDS[COMP_CWORD]}"\n'
+            f'    COMPREPLY=( $(compgen -W "{words}" -- "$cur") )\n'
+            "}\n"
+            f"complete -F _{prog.replace('-', '_')}_completion {prog}\n"
+        )
+    if shell == "zsh":
+        return (
+            f"#compdef {prog}\n"
+            f"_arguments '*: :(({words}))'\n"
+        )
+    return (
+        f"complete -c {prog} -f -a '{words}'\n"
+    )
+
+
+def resolve_ai_settings(args: argparse.Namespace, config_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Resolve AI settings with precedence: CLI flags > config file > env vars > defaults.
+    This lets a developer set the provider once and simply run `git scan --ai`.
+    """
+    cfg = (config_data or {}).get("ai", {})
+    if not isinstance(cfg, dict):
+        cfg = {}
+
+    def env_flag(name: str) -> bool:
+        return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+    provider = args.provider or cfg.get("provider") or os.environ.get("SENTINEL_AI_PROVIDER") or "auto"
+    model = args.model or cfg.get("model") or os.environ.get("SENTINEL_AI_MODEL") or None
+    endpoint = args.ai_endpoint or cfg.get("endpoint") or os.environ.get("SENTINEL_AI_ENDPOINT") or None
+    allow_remote = bool(
+        args.allow_remote or cfg.get("allow_remote") or env_flag("SENTINEL_AI_ALLOW_REMOTE")
+    )
+    timeout_raw = args.ai_timeout
+    if timeout_raw == 120:
+        timeout_raw = cfg.get("timeout") or os.environ.get("SENTINEL_AI_TIMEOUT") or 120
+    try:
+        timeout = int(timeout_raw)
+    except (TypeError, ValueError):
+        timeout = 120
+    return {
+        "provider": str(provider),
+        "model": str(model) if model else None,
+        "endpoint": str(endpoint) if endpoint else None,
+        "allow_remote": allow_remote,
+        "timeout": timeout,
+    }
+
+
 def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog=prog or "git-scan",
         description="Git Security Sentinel: Privacy-first Git diff security scanner.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  git-scan --staged
-  git-scan --unstaged
-  git-scan --all
-  git-scan --base main
-  git-scan --all --format json
-  git-scan --all --output scan-report.json
-  git-scan --all --redacted-diff-out sanitized.patch
+  git scan --init
+  git scan --ai
+  git scan --oneline
+  git scan --explain secret.aws_access_key
+  git scan --staged
+  git scan --all --format json
+  git scan --all --format github
+  git scan --base main --format sarif --output results.sarif
+  git-scan --ai --fix --cost-estimate
   git-scan --exclude "tests/**" --baseline .sentinel.baseline
 """,
+    )
+
+    # Git dispatches `git scan ...` to the `git-scan` executable as
+    # `git-scan scan ...`. Accept the optional leading token so both
+    # `git scan --ai` and `git-scan --ai` work identically.
+    parser.add_argument(
+        "git_command",
+        nargs="?",
+        choices=["scan"],
+        default=None,
+        help=argparse.SUPPRESS,
     )
 
     mode_group = parser.add_mutually_exclusive_group()
@@ -179,9 +333,36 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--format",
-        choices=["text", "json", "sarif"],
+        choices=["text", "json", "sarif", "github"],
         default="text",
-        help="Console output format (default: text).",
+        help="Console output format (github emits inline PR annotations).",
+    )
+    parser.add_argument(
+        "--init",
+        action="store_true",
+        help="Set up this repository: starter config, ignore file, .env.example, and pre-commit hook.",
+    )
+    parser.add_argument(
+        "--explain",
+        metavar="RULE_ID",
+        help="Explain a detection rule and how to fix or suppress it, then exit.",
+    )
+    parser.add_argument(
+        "--completion",
+        choices=["powershell", "bash", "zsh", "fish"],
+        help="Print a shell completion script for the given shell, then exit.",
+    )
+    parser.add_argument(
+        "--oneline",
+        action="store_true",
+        help="Concise one-line-per-finding output.",
+    )
+    parser.add_argument(
+        "--key",
+        metavar="NAME=VALUE",
+        action="append",
+        default=[],
+        help="With --init, write an API key into the local gitignored .env file (repeatable).",
     )
     parser.add_argument(
         "--install-hook",
@@ -191,7 +372,7 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Force overwrite of existing pre-commit hook during installation.",
+        help="Overwrite existing starter files or pre-commit hook during --init/--install-hook.",
     )
     parser.add_argument(
         "--upgrade",
@@ -272,8 +453,8 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
     ai_group.add_argument(
         "--provider",
         choices=["auto", "ollama", "gemini", "openai", "groq"],
-        default="auto",
-        help="AI provider for review (default: auto; uses GEMINI_API_KEY if present, otherwise local Ollama).",
+        default=None,
+        help="AI provider override. Default: .sentinel.yaml ai.provider, then SENTINEL_AI_PROVIDER, then auto-detect (Gemini/Groq/OpenAI keys, else Ollama).",
     )
     ai_group.add_argument(
         "--model",
@@ -316,6 +497,47 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
     args = parser.parse_args(argv)
 
     repo_path = Path(args.repo_root).resolve()
+
+    if args.explain:
+        return explain_rule(args.explain, json_mode=(args.format == "json"))
+
+    if args.completion:
+        print(generate_completion(parser, args.completion, prog or "git-scan"))
+        return 0
+
+    if args.init:
+        messages: List[str] = []
+        if args.key:
+            env_path = repo_path / ".env"
+            existing_lines = (
+                env_path.read_text(encoding="utf-8", errors="replace").splitlines()
+                if env_path.is_file() else []
+            )
+            new_keys: Dict[str, str] = {}
+            for item in args.key:
+                if "=" not in item:
+                    sys.stderr.write(f"Invalid --key format: {item} (expected NAME=VALUE)\n")
+                    return 2
+                name, value = item.split("=", 1)
+                name, value = name.strip(), value.strip()
+                if name and value:
+                    new_keys[name] = value
+            kept = [
+                line for line in existing_lines
+                if not any(line.strip().startswith(f"{name}=") for name in new_keys)
+            ]
+            kept.extend(f"{name}={value}" for name, value in new_keys.items())
+            try:
+                env_path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+                messages.append("[ok]   wrote local .env (gitignored)")
+            except Exception as e:
+                sys.stderr.write(f"Failed to write .env: {e}\n")
+                return 1
+        ok, init_messages = bootstrap_project(repo_path, force=args.force)
+        for line in messages:
+            print(line)
+        print("\n".join(init_messages))
+        return 0 if ok else 1
 
     if args.install_hook:
         success, msg = install_pre_commit_hook(repo_root=repo_path, force=args.force)
@@ -425,6 +647,7 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
     # Determine scan mode and diff content
     diff_content = ""
     scan_mode = "all"
+    auto_diff: Optional[str] = None
     errors: List[str] = []
 
     if args.diff_file:
@@ -466,6 +689,8 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
                 print(json.dumps(report, indent=2))
                 if args.output:
                     Path(args.output).write_text(json.dumps(report, indent=2), encoding="utf-8")
+            elif args.format == "github":
+                print(format_github_report(report))
             elif not is_quiet:
                 print(format_text_report(report, color=color_enabled, verbose=is_verbose))
                 if args.output:
@@ -478,13 +703,26 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
             scan_mode = "unstaged"
         elif args.base:
             scan_mode = f"base:{args.base}"
-        else:
+        elif args.all:
             scan_mode = "all"
+        else:
+            # Smart default: review staged work first when the developer has
+            # staged something, otherwise fall back to all uncommitted changes.
+            candidate, candidate_errors = scanner.get_diff("staged")
+            if candidate.strip() and not candidate_errors:
+                scan_mode = "staged"
+                auto_diff = candidate
+                errors.extend(candidate_errors)
+            else:
+                scan_mode = "all"
 
         branch_arg = args.base if args.base else None
         mode_key = "base" if args.base else scan_mode
-        diff_content, git_errors = scanner.get_diff(mode_key, base_branch=branch_arg)
-        errors.extend(git_errors)
+        if auto_diff is None:
+            diff_content, git_errors = scanner.get_diff(mode_key, base_branch=branch_arg)
+            errors.extend(git_errors)
+        else:
+            diff_content = auto_diff
 
     if errors:
         report = {
@@ -507,6 +745,8 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
             print(json.dumps(report, indent=2))
             if args.output:
                 Path(args.output).write_text(json.dumps(report, indent=2), encoding="utf-8")
+        elif args.format == "github":
+            print(format_github_report(report))
         elif not is_quiet:
             print(format_text_report(report, color=color_enabled, verbose=is_verbose))
             if args.output:
@@ -530,6 +770,7 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
 
     scan_report = scanner.scan_diff_report(diff_content, scan_mode=scan_mode)
     report = scan_report.to_dict()
+    ai_settings = resolve_ai_settings(args, config_data)
 
     # AI Contextual Review
     ai_text_output = ""
@@ -563,12 +804,12 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
                 success, ai_result, ai_formatted = run_ai_review(
                     report_data=report,
                     sanitized_diff=sanitized_diff,
-                    provider=args.provider,
-                    model=args.model,
-                    endpoint=args.ai_endpoint,
-                    allow_remote=args.allow_remote,
-                    timeout_sec=args.ai_timeout,
-                    format_mode=args.format,
+                    provider=ai_settings["provider"],
+                    model=ai_settings["model"],
+                    endpoint=ai_settings["endpoint"],
+                    allow_remote=ai_settings["allow_remote"],
+                    timeout_sec=ai_settings["timeout"],
+                    format_mode="json" if args.format == "json" else "text",
                     fix_mode=getattr(args, "fix", False),
                     cost_estimate=getattr(args, "cost_estimate", False),
                 )
@@ -623,6 +864,8 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
             print(json.dumps(sarif_data, indent=2))
         elif args.format == "json":
             print(json.dumps(report, indent=2))
+        elif args.format == "github":
+            print(format_github_report(report))
         else:
             findings_list = report.get("findings", [])
             errors_list = report.get("errors", [])
@@ -640,6 +883,13 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
             print(json.dumps(sarif_data, indent=2))
         elif args.format == "json":
             print(json.dumps(report, indent=2))
+        elif args.format == "github":
+            print(format_github_report(report))
+        elif args.oneline:
+            print(format_oneline_report(report))
+            if ai_text_output:
+                print()
+                print(ai_text_output)
         else:
             print(format_text_report(report, color=color_enabled, verbose=is_verbose))
             if ai_text_output:

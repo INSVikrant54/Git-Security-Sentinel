@@ -1,6 +1,6 @@
 # Detection Rules Reference Catalog
 
-Git Security Sentinel pairs a deterministic regex-based static scanner with an optional local AI contextual reviewer. This document catalogs all 47 static rules implemented across the 6 detection categories, explaining their matching logic, expected false positives, remediation recommendations, and known limitations.
+Git Security Sentinel pairs a deterministic regex-based static scanner with an optional AI contextual reviewer (local by default; cloud providers are opt-in). This document catalogs all 47 static rules, organized below into 6 thematic sections for readability. In scan output, findings use 5 canonical categories: `secrets` (30), `sensitive_files` (4), `insecure_code` (10), `configuration` (1), and `compliance` (2). The sections explain matching logic, expected false positives, remediation recommendations, and known limitations.
 
 ---
 

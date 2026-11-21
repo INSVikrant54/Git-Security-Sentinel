@@ -141,6 +141,110 @@ class TestE2ECLIFlagsAndBehaviors(unittest.TestCase):
             timeout=20,
         )
 
+    def test_git_scan_subcommand_alias(self):
+        """Tier 1: `git scan ...` is accepted as an alias for `git-scan ...`."""
+        clean_diff = (
+            "diff --git a/app.py b/app.py\n"
+            "--- a/app.py\n"
+            "+++ b/app.py\n"
+            "@@ -0,0 +1,2 @@\n"
+            "+def greet():\n"
+            "+    return 'hello world'\n"
+        )
+        self.diff_path.write_text(clean_diff, encoding="utf-8")
+        base_args = ["--diff-file", str(self.diff_path), "--repo-root", self.temp_dir]
+        direct = self._run_scanner(base_args)
+        via_git = self._run_scanner(["scan"] + base_args)
+        self.assertEqual(via_git.returncode, direct.returncode, via_git.stderr)
+        self.assertIn("No security issues detected", via_git.stdout)
+
+    def test_init_creates_starter_files_and_hook(self):
+        """Tier 1: --init bootstraps config and pre-commit hook in one step."""
+        subprocess.run(["git", "init", "-q"], cwd=self.temp_dir, check=True)
+        result = self._run_scanner(["--init", "--repo-root", self.temp_dir])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for name in (".sentinel.yaml", ".sentinelignore", ".env.example"):
+            self.assertTrue((Path(self.temp_dir) / name).is_file(), f"Missing {name}")
+        self.assertTrue((Path(self.temp_dir) / ".git" / "hooks" / "pre-commit").is_file())
+        self.assertIn("git scan --ai", result.stdout)
+
+    def test_init_preserves_existing_files(self):
+        """Tier 2: --init never overwrites existing files without --force."""
+        subprocess.run(["git", "init", "-q"], cwd=self.temp_dir, check=True)
+        config = Path(self.temp_dir) / ".sentinel.yaml"
+        config.write_text("custom: value\n", encoding="utf-8")
+        result = self._run_scanner(["--init", "--repo-root", self.temp_dir])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(config.read_text(encoding="utf-8"), "custom: value\n")
+        self.assertIn("already exists", result.stdout)
+
+    def test_init_with_key_writes_local_env(self):
+        """Tier 1: --init --key writes a gitignored .env without manual editing."""
+        subprocess.run(["git", "init", "-q"], cwd=self.temp_dir, check=True)
+        result = self._run_scanner(
+            ["--init", "--key", "GEMINI_API_KEY=dummy-key", "--repo-root", self.temp_dir]
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("GEMINI_API_KEY=dummy-key", (Path(self.temp_dir) / ".env").read_text(encoding="utf-8"))
+
+    def test_explain_rule(self):
+        """Tier 1: --explain prints actionable guidance for a known rule."""
+        result = self._run_scanner(["--explain", "secret.aws_access_key"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("secret.aws_access_key", result.stdout)
+        self.assertIn("Remediation", result.stdout)
+
+    def test_explain_unknown_rule(self):
+        """Tier 2: --explain exits 2 for an unknown rule."""
+        result = self._run_scanner(["--explain", "does.not.exist"])
+        self.assertEqual(result.returncode, 2)
+
+    def test_oneline_and_github_formats(self):
+        """Tier 2: --oneline and --format github produce concise / annotated output."""
+        self.diff_path.write_text(
+            "diff --git a/app.py b/app.py\n"
+            "--- a/app.py\n"
+            "+++ b/app.py\n"
+            "@@ -0,0 +1,1 @@\n"
+            '+AWS_ACCESS_KEY_ID = "' + "AKIA" + "IOSFODNN7EXAMPLE" + '"\n',
+            encoding="utf-8",
+        )
+        base = ["--diff-file", str(self.diff_path), "--repo-root", self.temp_dir]
+        oneline = self._run_scanner(base + ["--oneline"])
+        self.assertIn("Summary:", oneline.stdout)
+        self.assertIn("[CRITICAL]", oneline.stdout)
+        github = self._run_scanner(base + ["--format", "github"])
+        self.assertIn("::error file=app.py,line=1::", github.stdout)
+        self.assertIn("secret.aws_access_key", github.stdout)
+
+    def test_completion_script(self):
+        """Tier 1: --completion emits a usable shell completion script."""
+        result = self._run_scanner(["--completion", "powershell"])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Register-ArgumentCompleter", result.stdout)
+
+    def test_resolve_ai_settings_precedence(self):
+        """Tier 2: CLI flags beat config file, which beats environment defaults."""
+        if not HAS_PACKAGE:
+            self.skipTest("package not importable")
+        from unittest.mock import patch
+        from git_security_sentinel.cli import build_arg_parser, resolve_ai_settings
+
+        parser = build_arg_parser()
+        args = parser.parse_args([])
+        with patch.dict(os.environ, {"SENTINEL_AI_PROVIDER": "groq"}, clear=False):
+            self.assertEqual(
+                resolve_ai_settings(args, {"ai": {"provider": "gemini", "model": "x-model"}})["provider"],
+                "gemini",
+            )
+            self.assertEqual(
+                resolve_ai_settings(args, {"ai": {"provider": "gemini", "model": "x-model"}})["model"],
+                "x-model",
+            )
+            self.assertEqual(resolve_ai_settings(args, {})["provider"], "groq")
+        argv = parser.parse_args(["--provider", "openai"])
+        self.assertEqual(resolve_ai_settings(argv, {"ai": {"provider": "gemini"}})["provider"], "openai")
+
     def test_clean_diff_exit_code_zero(self):
         """Tier 1: Clean diff returns exit code 0."""
         clean_diff = (

@@ -12,11 +12,36 @@
 
 ---
 
+## ⚡ 30-Second Start
+
+```bash
+pip install git-security-sentinel
+git scan --init
+git scan --ai
+```
+
+`git scan --init` creates the config, ignore file, `.env.example`, and pre-commit hook **for you** — nothing to write by hand. If you already have a cloud API key, include it in the same command:
+
+```bash
+git scan --init --key GEMINI_API_KEY=your-key
+```
+
+Everyday use:
+
+```bash
+git scan                          # staged changes if any exist, otherwise all uncommitted changes
+git scan --ai                     # scan + AI triage, no flags required
+git scan --oneline                # one line per finding
+git scan --explain <rule-id>      # what a rule means and how to fix it
+```
+
+---
+
 ## 1. Overview
 
 **Git Security Sentinel** is a deterministic, privacy-first Git security scanner, developer CLI, and Agent Skill designed to safeguard the software development lifecycle before code is committed or published.
 
-It inspects Git diffs for leaked API keys, tokens, connection strings, sensitive committed files, and dangerous code patterns using **47 detection rules** across 6 categories. Operating with **zero runtime dependencies outside the Python standard library**, Git Security Sentinel features SARIF 2.1.0 output for GitHub Advanced Security, native pre-commit framework support, inline comment suppression (`# nosec`), baseline migration, and an optional multi-provider contextual AI reviewer with suggested remediation diffs (`--fix`) and cost estimation (`--cost-estimate`).
+It inspects Git diffs for leaked API keys, tokens, connection strings, sensitive committed files, and dangerous code patterns using **47 detection rules** across 5 categories. Operating with **zero runtime dependencies outside the Python standard library**, Git Security Sentinel features SARIF 2.1.0 output for GitHub Advanced Security, native pre-commit framework support, inline comment suppression (`# nosec`), baseline migration, and an optional multi-provider contextual AI reviewer with suggested remediation diffs (`--fix`) and cost estimation (`--cost-estimate`).
 
 ---
 
@@ -26,11 +51,13 @@ It inspects Git diffs for leaked API keys, tokens, connection strings, sensitive
 - 🛡️ **47 Static Detection Rules**: Comprehensive coverage across Cloud Provider Keys, Auth Tokens, Database URIs, Sensitive Committed Files, Insecure Code Patterns (CWE-78, CWE-89, CWE-502, CWE-611, etc.), and License Compliance.
 - 🔒 **Guaranteed In-Memory Secret Redaction**: Deterministic sanitization replaces secrets with typed `[REDACTED:<TYPE>]` tokens before terminal rendering, JSON reporting, SARIF export, or AI prompt delivery. Negative lookahead ensures specific vendor tokens are never overwritten by generic credential regexes.
 - 📊 **OASIS SARIF 2.1.0 Schema Compliance**: Export scan results directly to SARIF (`--format sarif`) for instant integration with GitHub Code Scanning alerts and security dashboards.
-- 🪝 **Pre-Commit Framework & Direct Hook Installer**: Drop-in `.pre-commit-hooks.yaml` support or one-command installation into `.git/hooks/pre-commit` via `git-scan --install-hook`.
+- 🪝 **One-Command Setup**: `git scan --init` creates starter config, ignore rules, `.env.example`, and installs the pre-commit hook automatically — no manual file creation.
+- 🪝 **Pre-Commit Framework & Direct Hook Installer**: Drop-in `.pre-commit-hooks.yaml` support or direct installation into `.git/hooks/pre-commit` via `git-scan --install-hook`.
 - 🔕 **Granular False-Positive Suppression**: Support for line-level `# nosec` and `# sentinel:ignore` comments, polyglot syntax (`#`, `//`, `--`, `/* */`), rule-specific directives, `.sentinelignore` path exclusions, and CLI `--exclude`.
 - 📋 **Baseline Migration for Legacy Codebases**: Suppress known historical debt with `--baseline .sentinel.baseline` using stable SHA-256 fingerprints resilient to line shifts.
 - ⚙️ **Pure Stdlib Configuration**: Load project defaults from `.sentinel.yaml` or `.sentinel.toml` parsed completely with standard library utilities (no PyYAML required).
 - 🤖 **Contextual AI Reviewer with `--fix` & `--cost-estimate`**: AI triage supporting local Gemma via Ollama (100% offline and loopback-restricted) as well as Google AI Studio, OpenAI, and Groq. Generates non-mutating remediation diffs and transparent USD query cost estimations.
+- 🧭 **Low-Effort CLI**: `git scan` and `git scan --ai` work with no flags; `--oneline`, `--explain <rule>`, `--completion <shell>`, and `--format github` keep daily use and CI simple.
 - 🔄 **Self-Update Capability**: Integrated 24-hour cached PyPI version checker and one-command upgrade via `git-scan --upgrade`.
 
 ---
@@ -51,7 +78,7 @@ flowchart TD
         DiffParser["Unified Diff Hunk Parser (Line Accurate)"]
         ConfigLoader["Config Loader (.sentinel.yaml / .sentinel.toml)"]
         PathFilter["Path Filter (.sentinelignore & --exclude)"]
-        RuleCatalog["47 Detection Rules (6 Categories)"]
+        RuleCatalog["47 Detection Rules (5 Categories)"]
         Suppression["Inline Comment Filter (# nosec, polyglot)"]
         Baseline["SHA-256 Fingerprint Baseline Filter"]
         Redactor["Sequential Redaction Engine (Negative Lookahead)"]
@@ -123,35 +150,41 @@ python scripts/scan_diff.py --staged
 
 ---
 
-## 5. Quick Start
+## 5. Everyday Commands
 
-### 1. Scan Staged Changes (Pre-Commit Check)
+### Set up a repository once
 ```bash
-git-scan --staged
+git scan --init
+```
+This creates `.sentinel.yaml`, `.sentinelignore`, `.env.example`, and installs the pre-commit hook. Existing files are never overwritten unless you pass `--force`. To save a cloud key in the same step:
+```bash
+git scan --init --key GEMINI_API_KEY=your-key
 ```
 
-### 2. Scan All Local Changes
+### Scan
 ```bash
-git-scan --all
+git scan                 # staged changes if you staged any, otherwise all uncommitted changes
+git scan --oneline      # concise one-line-per-finding output
+git scan --staged        # explicit staged-only scan
 ```
 
-### 3. Generate SARIF 2.1.0 Report for CI / GitHub Security
+### AI review
 ```bash
-git-scan --base main --format sarif --output results.sarif
-```
-
-### 4. Run Contextual AI Review with Remediation Diffs
-```bash
-# Standalone AI review of scan report with fix diffs:
+git scan --ai                          # scan + AI triage with zero flags
+git scan --ai --fix --cost-estimate    # with remediation diffs and cost
 git-sentinel-ai --report scan-report.json --fix
+```
+AI defaults come from the `.sentinel.yaml` created by `--init` or from `SENTINEL_AI_*` environment variables. With no cloud key, local Ollama is used (`ollama pull gemma3:4b`).
 
-# Combined unified staged scan with local Gemma AI review:
-git-scan --staged --ai --fix --cost-estimate
+### Understand a finding
+```bash
+git scan --explain secret.aws_access_key
 ```
 
-### 5. Install Git Pre-Commit Hook
+### CI / Pull Requests
 ```bash
-git-scan --install-hook
+git scan --format github                                   # inline PR annotations
+git scan --base main --format sarif --output results.sarif # GitHub Code Scanning
 ```
 
 ---
@@ -163,9 +196,11 @@ git-scan --install-hook
 The primary scanner CLI inspects diffs, evaluates rules, filters suppressions, and formats findings:
 
 ```
-usage: git-scan [-h] [--staged | --unstaged | --all | --base BRANCH |
+usage: git-scan [-h] [scan] [--staged | --unstaged | --all | --base BRANCH |
                 --diff-file FILE] [--version] [--repo-root PATH]
-                [--format {text,json,sarif}] [--install-hook] [--force]
+                [--format {text,json,sarif,github}] [--init] [--explain RULE_ID]
+                [--completion {powershell,bash,zsh,fish}] [--oneline]
+                [--key NAME=VALUE] [--install-hook] [--force]
                 [--upgrade] [--no-update-check] [--output FILE]
                 [--redacted-diff-out FILE]
                 [--severity-threshold {critical,high,medium,low}]
@@ -176,6 +211,8 @@ usage: git-scan [-h] [--staged | --unstaged | --all | --base BRANCH |
                 [--ai-timeout SECONDS] [--fix] [--cost-estimate]
 ```
 
+The same CLI is available as a Git subcommand — `git scan --ai` is equivalent to `git-scan --ai` (Git delegates `git scan` to the `git-scan` executable).
+
 #### Diff Scope Options (Mutually Exclusive)
 - `--staged`: Scan staged (index/cached) git changes.
 - `--unstaged`: Scan unstaged working directory changes.
@@ -184,7 +221,8 @@ usage: git-scan [-h] [--staged | --unstaged | --all | --base BRANCH |
 - `--diff-file <file>`: Scan unified diff from file, or pass `-` to read from stdin.
 
 #### Output & Reporting Options
-- `--format {text,json,sarif}`: Console output format (default: `text`).
+- `--format {text,json,sarif,github}`: Console output format (`github` emits inline PR annotations).
+- `--oneline`: One line per finding plus a short summary — ideal for daily use.
 - `--output <file>`: Write full structured JSON scan report to specified file.
 - `--redacted-diff-out <file>`: Write sanitized unified diff with all secrets scrubbed.
 - `--severity-threshold {critical,high,medium,low}`: Minimum severity triggering exit code `1` (default: `high`).
@@ -199,16 +237,20 @@ usage: git-scan [-h] [--staged | --unstaged | --all | --base BRANCH |
 - `--config <file>`: Path to `.sentinel.yaml` or `.sentinel.toml` configuration file.
 
 #### Lifecycle & Utility Options
+- `--init`: One-command setup — starter config, ignore file, `.env.example`, and pre-commit hook.
+- `--key NAME=VALUE`: With `--init`, write an API key into the local gitignored `.env` (repeatable).
+- `--explain <rule-id>`: Print what a rule detects, its severity, false positives, and remediation, then exit.
+- `--completion {powershell,bash,zsh,fish}`: Print a shell completion script, then exit.
 - `--install-hook`: Install pre-commit hook into `.git/hooks/pre-commit`.
-- `--force`: Overwrite existing non-sentinel hook during installation.
+- `--force`: Overwrite existing starter files or non-sentinel hook during `--init`/`--install-hook`.
 - `--upgrade`: Upgrade package to latest release from PyPI.
 - `--no-update-check`: Disable automatic 24-hour background PyPI version check.
 - `--version`: Print version number and exit.
 
 #### Inline AI Review Options
 - `--ai`: Run contextual AI review on findings.
-- `--provider {auto,ollama,gemini,openai,groq}`: AI inference provider (default: `auto`).
-- `--model <name>`: Model override (e.g. `gemma3:4b`, `gemma-4-26b-a4b-it`, `gpt-4o-mini`).
+- `--provider {auto,ollama,gemini,openai,groq}`: AI provider override. Default: `.sentinel.yaml ai.provider`, then `SENTINEL_AI_PROVIDER`, then auto-detect (cloud key if present, else Ollama).
+- `--model <name>`: Model override — also read from `ai.model` or `SENTINEL_AI_MODEL`.
 - `--fix`: Display suggested remediation diffs without modifying files on disk.
 - `--cost-estimate`: Display token approximations and estimated query cost in USD.
 - `--allow-remote`: Permit non-loopback endpoints for Ollama (loopback enforced by default).
@@ -293,7 +335,9 @@ model = "gemma3:4b"
 allow_remote = false
 ```
 
-*Precedence*: Command-line arguments always override values defined in configuration files.
+*Precedence*: Command-line arguments override configuration files, which override `SENTINEL_AI_*` environment variables, which override defaults. The `ai` block is now fully applied by `git scan --ai`, so you can set `provider`, `model`, `endpoint`, `allow_remote`, and `timeout` once here.
+
+Supported environment defaults: `SENTINEL_AI_PROVIDER`, `SENTINEL_AI_MODEL`, `SENTINEL_AI_ENDPOINT`, `SENTINEL_AI_ALLOW_REMOTE`, `SENTINEL_AI_TIMEOUT`. Cloud API keys are read from `GEMINI_API_KEY`, `OPENAI_API_KEY`, or `GROQ_API_KEY` — `git scan --init --key NAME=VALUE` writes them to the local gitignored `.env` for you.
 
 ---
 

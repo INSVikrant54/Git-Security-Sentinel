@@ -34,9 +34,10 @@ Maintainers will endeavor to:
 Git Security Sentinel is designed around the following core security principles:
 
 1. **Zero Secret Leakage**:
-   - The scanner deterministically redacts credential values before they are logged to stdout/stderr, written to JSON reports, exported as sanitized diffs, or passed to local AI models.
-2. **Local-Only AI Execution**:
-   - The optional AI reviewer client connects strictly to local loopback endpoints (`127.0.0.1` or `localhost`). It never transmits repository diffs or code to external cloud LLM APIs.
+   - The scanner deterministically redacts credential values before they are logged to stdout/stderr, written to JSON reports, exported as sanitized diffs, or passed to AI providers (local or cloud).
+2. **Local-First AI Execution with Explicit Cloud Opt-In**:
+   - The optional AI reviewer connects to local `127.0.0.1` / `localhost` endpoints by default when using Ollama, keeping diffs on the machine unless loopback enforcement is relaxed with `--allow-remote`.
+   - Cloud providers (`--provider gemini`, `openai`, or `groq`) are strictly opt-in and require their own API keys. When selected, redacted findings and the sanitized diff are sent to that provider's API. Detected secret values are deterministically redacted before any prompt is built, but non-secret code context is still shared with the chosen provider.
 3. **No Shell Execution**:
    - Subprocess invocations of `git` explicitly pass argument lists rather than using `shell=True`, preventing shell injection vulnerabilities.
 4. **Untrusted Input Assumption**:

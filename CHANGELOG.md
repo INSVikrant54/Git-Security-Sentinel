@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **One-Command Setup**: `git scan --init` creates `.sentinel.yaml`, `.sentinelignore`, `.env.example`, and installs the pre-commit hook. `--key NAME=VALUE` writes cloud API keys into the local gitignored `.env`, and `--force` is required to overwrite existing files.
+- **Git Subcommand Alias**: `git scan ...` is equivalent to `git-scan ...`; the CLI accepts the leading `scan` token Git passes to the executable.
+- **Working AI Configuration**: `.sentinel.yaml` / `.sentinel.toml` `ai` settings (`provider`, `model`, `endpoint`, `allow_remote`, `timeout`) are now applied, with `SENTINEL_AI_*` environment defaults and CLI flags taking precedence.
+- **Developer-Friendly Output & Discovery**: `--oneline` for concise findings, `--explain <rule-id>` for rule guidance, `--completion {powershell,bash,zsh,fish}` for shell completions, and `--format github` for inline PR annotations.
+- **Smart Default Scope**: `git scan` with no scope flag scans staged changes when any exist, otherwise all uncommitted changes.
+
+### Fixed
+- Windows scans no longer crash on non-ASCII Git output: subprocess output is decoded as UTF-8 with replacement instead of the system code page.
+
+### Changed
+- `--provider` now defaults to config/env/auto-detection instead of always `auto`; `--format` accepts `github`; `--force` applies to `--init` as well as hook installation.
+- Documentation and Agent Skill now lead with the 30-second start (`pip install` → `git scan --init` → `git scan --ai`) and no longer ask developers to create files manually.
+
+---
+
 ## [1.1.0] - 2026-11-21
 
 ### Added
@@ -14,13 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Packaged repository via `pyproject.toml` utilizing `setuptools` with `src/git_security_sentinel/` layout.
   - Global CLI entry points registered: `git-scan`, `git-security-sentinel`, and `git-sentinel-ai`.
   - Top-level `__main__.py` enabling direct execution via `python -m git_security_sentinel`.
-- **47 Detection Rules across 6 Categories**:
-  - *Cloud Provider Keys (12 rules)*: AWS Access Key ID, AWS Secret Access Key, Stripe, Twilio, SendGrid, Mailgun, Mailchimp, Square, Shopify, Heroku, Datadog, New Relic.
-  - *Auth Tokens (9 rules)*: GitHub Personal Access Tokens, Slack tokens, JWT tokens, Bearer tokens, Basic Authentication headers, npm publish tokens, PyPI upload tokens, Discord bot tokens, Telegram bot tokens.
-  - *Database & Connection Strings (7 rules)*: MongoDB URIs, PostgreSQL URIs, MySQL URIs, Redis URIs, AMQP connection strings, Firebase Cloud Messaging server keys, Google Cloud Service Account JSON credentials.
-  - *Sensitive Committed Files (4 rules)*: `.env*` files (permitting benign `.example`/`.sample`/`.template`), `id_rsa`, `id_ed25519` private keys (permitting `.pub`), and `.pem`/`.key`/`.p12`/`.pfx` certificates.
-  - *Insecure Code Patterns & CWEs (11 rules)*: Shell injection (`subprocess(..., shell=True)`, `os.system`), pickle deserialization (`pickle.loads`), unsafe YAML loading (`yaml.load` without `SafeLoader`), SQL string concatenation / f-strings, XML External Entity (XXE) injection, committed temporary credentials, production debug flags (`DEBUG` set `True`), wildcard CORS (`Access-Control-Allow-Origin` wildcard), unverified SSL (`verify` set `False`, `NODE_TLS_REJECT_UNAUTHORIZED=0`), and dangerous dynamic code evaluation (`eval` / `exec`).
-  - *Compliance & Hygiene (4 rules)*: Cryptographic private key headers, generic credential assignments, security debt TODO/FIXME markers, and root repository open-source license detection.
+  - Git subcommand alias: `git scan --ai` is equivalent to `git-scan --ai` (Git dispatches `git scan` to the `git-scan` executable).
+- **47 Detection Rules across 5 Categories**:
+  - *`secrets` (30 rules)*: Cloud provider keys (AWS Access Key ID and Secret Access Key, Stripe, Twilio, SendGrid, Mailgun, Mailchimp, Square, Shopify, Heroku, Datadog, New Relic); auth tokens (GitHub PATs, Slack, JWT, Bearer, Basic Auth, npm, PyPI, Discord, Telegram); database URIs (MongoDB, PostgreSQL, MySQL, Redis, AMQP, Firebase FCM, GCP Service Account); and cryptographic private key headers and generic credential assignments.
+  - *`sensitive_files` (4 rules)*: `.env*` files (permitting benign `.example`/`.sample`/`.template`), `id_rsa`, `id_ed25519` private keys (permitting `.pub`), and `.pem`/`.key`/`.p12`/`.pfx` certificates.
+  - *`insecure_code` (10 rules)*: Shell injection (`subprocess(..., shell=True)`, `os.system`), pickle deserialization (`pickle.loads`), unsafe YAML loading (`yaml.load` without `SafeLoader`), SQL string concatenation / f-strings, XML External Entity (XXE) injection, committed temporary credentials, production debug flags (`DEBUG` set `True`), wildcard CORS (`Access-Control-Allow-Origin` wildcard), disabled TLS certificate verification (CWE-295), and dangerous dynamic code evaluation (`eval` / `exec`).
+  - *`configuration` (1 rule)*: Hardcoded loopback endpoint URL (`risk.localhost_endpoint`).
+  - *`compliance` (2 rules)*: Security debt TODO/FIXME markers and root repository open-source license detection.
 - **Line-Level Comment Suppression**:
   - Granular suppression directives via `# nosec` and `# sentinel:ignore`.
   - Polyglot syntax support across Python (`#`), JavaScript/C/Go/Rust (`//`), SQL/Lua (`--`), and block comments (`/* ... */`).
@@ -73,7 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 - **Zero Runtime Dependencies**: The entire core scanner and AI reviewer operate strictly using the Python standard library with zero third-party dependencies required.
 - **Guaranteed In-Memory Secret Redaction**: Deterministic sanitization replaces all detected secrets with typed `[REDACTED:<TYPE>]` tokens before terminal rendering, JSON serialization, SARIF generation, or transmission to AI providers.
-- **Loopback Enforcement for AI Inference**: Standalone and unified AI reviews connect strictly to local loopback endpoints (`127.0.0.1` / `localhost`) by default, preventing unintended transmission of code diffs over the network unless explicitly permitted with `--allow-remote`.
+- **Loopback Enforcement for AI Inference**: Standalone and unified AI reviews connect strictly to local loopback endpoints (`127.0.0.1` / `localhost`) by default, preventing unintended transmission of code diffs over the network unless a cloud provider is explicitly selected with `--provider` (Gemini / OpenAI / Groq) or a non-loopback Ollama endpoint is permitted with `--allow-remote`.
 
 ---
 

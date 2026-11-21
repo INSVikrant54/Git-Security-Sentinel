@@ -1,6 +1,6 @@
 """
 Git Security Sentinel - Detection Rules Catalog.
-Central registry and lookup for all 47 static detection rules across 6 categories.
+Central registry and lookup for all 47 static detection rules across 5 canonical categories.
 """
 
 from typing import Dict, List, Optional
