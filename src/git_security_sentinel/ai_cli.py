@@ -18,6 +18,12 @@ import urllib.parse
 import urllib.request
 
 from git_security_sentinel.core.models import VERSION
+from git_security_sentinel.ai.cost import (
+    PRICING_TABLE,
+    calculate_token_estimate,
+    estimate_query_cost,
+)
+from git_security_sentinel.ai.prompts import build_system_prompt
 
 DEFAULT_TIMEOUT_SEC = 120
 
@@ -329,40 +335,34 @@ def extract_json_from_text(text: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def build_system_prompt(format_mode: str = "text") -> str:
-    if format_mode == "json":
-        return (
-            "You are an expert Application Security Engineer reviewing static security scanner findings for Git diffs. "
-            "Your task is to provide concise, actionable, and contextual security triage. "
-            "Distinguish probable true positives from likely false positives (such as test fixtures, mocks, or benign dev configs). "
-            "Respond ONLY with a single valid JSON object matching this schema:\n"
-            "{\n"
-            '  "summary": "High-level summary of risks in this diff",\n'
-            '  "reviews": [\n'
-            "    {\n"
-            '      "rule_id": "string",\n'
-            '      "file": "string",\n'
-            '      "line": 0,\n'
-            '      "assessment": "genuine_risk | likely_false_positive | context_dependent",\n'
-            '      "risk_explanation": "string",\n'
-            '      "safe_alternative": "string"\n'
-            "    }\n"
-            "  ]\n"
-            "}\n"
-            "Return valid JSON only. Do not add markdown explanation outside the JSON."
-        )
+def format_cost_banner(cost_data: Dict[str, Any]) -> str:
+    """Format a clean visual banner summarizing token estimates and query cost."""
+    prov = cost_data.get("provider", "UNKNOWN").upper()
+    model = cost_data.get("model", "default")
+    p_tok = cost_data.get("prompt_tokens", 0)
+    c_tok = cost_data.get("completion_tokens", 0)
+    t_tok = cost_data.get("total_tokens", 0)
+    cost_val = cost_data.get("estimated_cost_usd", 0.0)
+    note = " (Free / Local)" if cost_data.get("provider") == "ollama" else ""
     return (
-        "You are an expert Application Security Engineer reviewing static security scanner findings for Git diffs. "
-        "Your task is to provide concise, actionable, and contextual security triage. "
-        "Distinguish probable true positives from likely false positives (such as test fixtures, mocks, or benign dev configs). "
-        "Explain the real-world attack risk, suggest safer code alternatives, and provide priority remediation steps. "
-        "Do NOT repeat the raw findings list verbatim. Add security engineering insight. "
-        "Output your review structured with clear sections: "
-        "1. Executive Summary, 2. Finding-by-Finding Triage & False-Positive Analysis, 3. Safer Code Alternatives, 4. Immediate Recommended Actions."
+        "--------------------------------------------------------------------\n"
+        "  COST ESTIMATION BANNER\n"
+        "--------------------------------------------------------------------\n"
+        f"  Provider          : {prov} ({model})\n"
+        f"  Prompt Tokens     : ~{p_tok:,}\n"
+        f"  Completion Tokens : ~{c_tok:,}\n"
+        f"  Total Tokens      : ~{t_tok:,}\n"
+        f"  Estimated USD Cost: ${cost_val:.6f}{note}\n"
+        "--------------------------------------------------------------------"
     )
 
 
-def build_user_prompt(report_data: Dict[str, Any], sanitized_diff: Optional[str] = None, format_mode: str = "text") -> str:
+def build_user_prompt(
+    report_data: Dict[str, Any],
+    sanitized_diff: Optional[str] = None,
+    format_mode: str = "text",
+    fix_mode: bool = False,
+) -> str:
     findings = report_data.get("findings", [])
     license_info = report_data.get("license", {})
     summary = report_data.get("summary", {})
@@ -399,8 +399,20 @@ def build_user_prompt(report_data: Dict[str, Any], sanitized_diff: Optional[str]
         prompt_parts.append("```")
 
     prompt_parts.append("")
+    if fix_mode:
+        prompt_parts.append(
+            "Remediation Diff Requirement:\n"
+            "For each verified security risk, include a minimal suggested remediation unified diff "
+            "showing how to safely refactor the code (e.g. parameterize queries, remove secrets to environment variables, "
+            "or use safe loaders). Do NOT write or apply files to disk."
+        )
+        prompt_parts.append("")
+
     if format_mode == "json":
-        prompt_parts.append("Evaluate each finding and return the requested structured JSON object.")
+        prompt_parts.append(
+            "Evaluate each finding and return the requested structured JSON object"
+            + (" including suggested_fix_diff where applicable." if fix_mode else ".")
+        )
     else:
         prompt_parts.append(
             "Provide your contextual security evaluation. For each finding, evaluate whether it is likely a true vulnerability or a false positive, explain why, and suggest the safest alternative."
@@ -418,6 +430,8 @@ def format_ai_review_report(
     error_msg: Optional[str],
     report_data: Dict[str, Any],
     format_mode: str = "text",
+    fix_mode: bool = False,
+    cost_estimate_data: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Structure the combined scan and AI review output."""
     structured_data = None
@@ -431,10 +445,14 @@ def format_ai_review_report(
         "model": model,
         "endpoint": endpoint if provider == "ollama" else "[CLOUD_PROVIDER]",
         "format": format_mode,
+        "fix_mode": fix_mode,
         "inference_completed": available and bool(review_text),
         "error": error_msg,
         "original_summary": report_data.get("summary", {}),
     }
+
+    if cost_estimate_data is not None:
+        out["cost_estimate"] = cost_estimate_data
 
     if structured_data is not None:
         out["structured_review"] = structured_data
@@ -454,6 +472,8 @@ def run_ai_review(
     allow_remote: bool = False,
     timeout_sec: int = DEFAULT_TIMEOUT_SEC,
     format_mode: str = "text",
+    fix_mode: bool = False,
+    cost_estimate: bool = False,
 ) -> Tuple[bool, Dict[str, Any], str]:
     """
     Execute AI security review programmatically on a parsed scan report.
@@ -466,7 +486,34 @@ def run_ai_review(
     active_model = model or defaults["model"]
     active_endpoint = endpoint or defaults["endpoint"]
 
-    # 1. Provider validation & authentication
+    # 1. Build prompts & estimate prompt tokens
+    system_prompt = build_system_prompt(format_mode=format_mode, fix_mode=fix_mode)
+    user_prompt = build_user_prompt(
+        report_data,
+        sanitized_diff,
+        format_mode=format_mode,
+        fix_mode=fix_mode,
+    )
+    prompt_tokens = calculate_token_estimate(system_prompt + "\n" + user_prompt)
+
+    def _calc_cost_data(comp_tokens: int) -> Optional[Dict[str, Any]]:
+        if not cost_estimate:
+            return None
+        cost_usd = estimate_query_cost(
+            prompt_tokens=prompt_tokens,
+            completion_tokens=comp_tokens,
+            provider=active_provider,
+        )
+        return {
+            "provider": active_provider,
+            "model": active_model,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": comp_tokens,
+            "total_tokens": prompt_tokens + comp_tokens,
+            "estimated_cost_usd": round(cost_usd, 6),
+        }
+
+    # 2. Provider validation & authentication
     api_key: Optional[str] = None
     if active_provider == "ollama":
         if not allow_remote and not is_loopback_url(active_endpoint):
@@ -475,6 +522,7 @@ def run_ai_review(
                 f"By default, Ollama requests must connect to local loopback (127.0.0.1 / localhost). "
                 f"Use --allow-remote to explicitly override."
             )
+            cost_data = _calc_cost_data(500)
             out_struct = format_ai_review_report(
                 model=active_model,
                 provider=active_provider,
@@ -484,8 +532,11 @@ def run_ai_review(
                 error_msg=err_msg,
                 report_data=report_data,
                 format_mode=format_mode,
+                fix_mode=fix_mode,
+                cost_estimate_data=cost_data,
             )
-            return False, out_struct, f"Error: {err_msg}"
+            banner_str = ("\n" + format_cost_banner(cost_data)) if (cost_estimate and cost_data) else ""
+            return False, out_struct, f"Error: {err_msg}{banner_str}"
     elif active_provider == "gemini":
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -494,6 +545,7 @@ def run_ai_review(
                 "Set it via PowerShell: $env:GEMINI_API_KEY = 'your_key_here'\n"
                 "Or define GEMINI_API_KEY in a local .env file."
             )
+            cost_data = _calc_cost_data(500)
             out_struct = format_ai_review_report(
                 model=active_model,
                 provider=active_provider,
@@ -503,8 +555,11 @@ def run_ai_review(
                 error_msg=err_msg,
                 report_data=report_data,
                 format_mode=format_mode,
+                fix_mode=fix_mode,
+                cost_estimate_data=cost_data,
             )
-            return False, out_struct, f"Error: {err_msg}"
+            banner_str = ("\n" + format_cost_banner(cost_data)) if (cost_estimate and cost_data) else ""
+            return False, out_struct, f"Error: {err_msg}{banner_str}"
     elif active_provider == "openai":
         api_key = os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -512,6 +567,7 @@ def run_ai_review(
                 "OpenAI provider requires OPENAI_API_KEY environment variable.\n"
                 "Set it via PowerShell: $env:OPENAI_API_KEY = 'your_key_here'"
             )
+            cost_data = _calc_cost_data(500)
             out_struct = format_ai_review_report(
                 model=active_model,
                 provider=active_provider,
@@ -521,8 +577,11 @@ def run_ai_review(
                 error_msg=err_msg,
                 report_data=report_data,
                 format_mode=format_mode,
+                fix_mode=fix_mode,
+                cost_estimate_data=cost_data,
             )
-            return False, out_struct, f"Error: {err_msg}"
+            banner_str = ("\n" + format_cost_banner(cost_data)) if (cost_estimate and cost_data) else ""
+            return False, out_struct, f"Error: {err_msg}{banner_str}"
     elif active_provider == "groq":
         api_key = os.environ.get("GROQ_API_KEY") or os.environ.get("OPENAI_API_KEY")
         if not api_key:
@@ -530,6 +589,7 @@ def run_ai_review(
                 "Groq provider requires GROQ_API_KEY environment variable.\n"
                 "Set it via PowerShell: $env:GROQ_API_KEY = 'your_key_here'"
             )
+            cost_data = _calc_cost_data(500)
             out_struct = format_ai_review_report(
                 model=active_model,
                 provider=active_provider,
@@ -539,17 +599,24 @@ def run_ai_review(
                 error_msg=err_msg,
                 report_data=report_data,
                 format_mode=format_mode,
+                fix_mode=fix_mode,
+                cost_estimate_data=cost_data,
             )
-            return False, out_struct, f"Error: {err_msg}"
+            banner_str = ("\n" + format_cost_banner(cost_data)) if (cost_estimate and cost_data) else ""
+            return False, out_struct, f"Error: {err_msg}{banner_str}"
 
-    # 2. Check Ollama server availability
+    # 3. Check Ollama server availability
     if active_provider == "ollama":
-        # Support mock patch in scripts.ai_review if running under test
+        # Support mock patch in caller or wrapper if running under test
         checker = check_ollama_available
-        if "scripts.ai_review" in sys.modules and hasattr(sys.modules["scripts.ai_review"], "check_ollama_available"):
-            checker = sys.modules["scripts.ai_review"].check_ollama_available
-        elif "ai_review" in sys.modules and hasattr(sys.modules["ai_review"], "check_ollama_available"):
-            checker = sys.modules["ai_review"].check_ollama_available
+        if not hasattr(checker, "assert_called"):
+            for mod_name in ("scripts.ai_review", "ai_review"):
+                if mod_name in sys.modules:
+                    mod = sys.modules[mod_name]
+                    fn = getattr(mod, "check_ollama_available", None)
+                    if fn and fn is not check_ollama_available:
+                        checker = fn
+                        break
 
         available, avail_msg = checker(active_endpoint, timeout_sec=5)
         if not available:
@@ -563,6 +630,7 @@ def run_ai_review(
                 f"  4. Re-run this scan.\n\n"
                 f"Alternative: If you have a Google AI Studio key, set GEMINI_API_KEY and use `--provider gemini`."
             )
+            cost_data = _calc_cost_data(500)
             out_struct = format_ai_review_report(
                 model=active_model,
                 provider=active_provider,
@@ -572,23 +640,23 @@ def run_ai_review(
                 error_msg=error_info,
                 report_data=report_data,
                 format_mode=format_mode,
+                fix_mode=fix_mode,
+                cost_estimate_data=cost_data,
             )
             if format_mode == "json":
                 out_str = json.dumps(out_struct, indent=2)
             else:
+                banner_str = ("\n" + format_cost_banner(cost_data) + "\n") if (cost_estimate and cost_data) else ""
                 out_str = (
                     "====================================================================\n"
                     "  GIT SECURITY SENTINEL - LOCAL AI REVIEWER\n"
                     "====================================================================\n"
                     f"Status: INFERENCE SKIPPED (Ollama Unavailable)\n\n"
                     f"{error_info}\n"
+                    f"{banner_str}"
                     "===================================================================="
                 )
             return False, out_struct, out_str
-
-    # 3. Build prompts
-    system_prompt = build_system_prompt(format_mode=format_mode)
-    user_prompt = build_user_prompt(report_data, sanitized_diff, format_mode=format_mode)
 
     sys.stderr.write(f"Connecting to {active_provider.upper()} (model: {active_model})...\n")
 
@@ -598,7 +666,16 @@ def run_ai_review(
     err_msg: Optional[str] = None
 
     if active_provider == "ollama":
-        success, review_text, err_msg = query_ollama(
+        ollama_query_fn = query_ollama
+        if not hasattr(ollama_query_fn, "assert_called"):
+            for mod_name in ("scripts.ai_review", "ai_review"):
+                if mod_name in sys.modules:
+                    mod = sys.modules[mod_name]
+                    fn = getattr(mod, "query_ollama", None)
+                    if fn and fn is not query_ollama:
+                        ollama_query_fn = fn
+                        break
+        success, review_text, err_msg = ollama_query_fn(
             endpoint=active_endpoint,
             model=active_model,
             prompt=user_prompt,
@@ -623,7 +700,11 @@ def run_ai_review(
             timeout_sec=timeout_sec,
         )
 
-    # 5. Format results
+    # 5. Calculate completion tokens and monetary cost
+    completion_tokens = calculate_token_estimate(review_text) if (success and review_text) else 500
+    cost_data = _calc_cost_data(completion_tokens)
+
+    # 6. Format results
     out_structure = format_ai_review_report(
         model=active_model,
         provider=active_provider,
@@ -633,6 +714,8 @@ def run_ai_review(
         error_msg=err_msg if not success else None,
         report_data=report_data,
         format_mode=format_mode,
+        fix_mode=fix_mode,
+        cost_estimate_data=cost_data,
     )
 
     if format_mode == "json":
@@ -646,6 +729,8 @@ def run_ai_review(
             f"Status   : {'COMPLETED' if success else 'FAILED'}",
             "-" * 68,
         ]
+        if cost_estimate and cost_data:
+            out_lines.append(format_cost_banner(cost_data))
         if success and review_text:
             out_lines.append(review_text)
         else:
@@ -730,6 +815,16 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
         help="Output format (default: text).",
     )
     parser.add_argument(
+        "--fix",
+        action="store_true",
+        help="Generate and display suggested remediation diffs without auto-applying to files on disk.",
+    )
+    parser.add_argument(
+        "--cost-estimate",
+        action="store_true",
+        help="Estimate prompt and completion token counts and compute monetary cost in USD across providers.",
+    )
+    parser.add_argument(
         "--output",
         metavar="OUT_FILE",
         help="Path to save AI review output.",
@@ -774,6 +869,8 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
         allow_remote=args.allow_remote,
         timeout_sec=args.timeout,
         format_mode=args.format,
+        fix_mode=args.fix,
+        cost_estimate=args.cost_estimate,
     )
 
     print(out_str)

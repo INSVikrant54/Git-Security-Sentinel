@@ -297,6 +297,16 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
         metavar="SECONDS",
         help="HTTP request timeout for AI inference in seconds (default: 120).",
     )
+    ai_group.add_argument(
+        "--fix",
+        action="store_true",
+        help="Generate and display suggested remediation diffs without auto-applying to files on disk (used with --ai).",
+    )
+    ai_group.add_argument(
+        "--cost-estimate",
+        action="store_true",
+        help="Display token count estimation and estimated query cost banner for AI review (used with --ai).",
+    )
 
     return parser
 
@@ -559,6 +569,8 @@ def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
                     allow_remote=args.allow_remote,
                     timeout_sec=args.ai_timeout,
                     format_mode=args.format,
+                    fix_mode=getattr(args, "fix", False),
+                    cost_estimate=getattr(args, "cost_estimate", False),
                 )
                 if args.format == "json":
                     report["ai_review"] = ai_result

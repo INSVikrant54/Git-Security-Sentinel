@@ -5,482 +5,498 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
 [![Agent Skills Open Standard](https://img.shields.io/badge/Standard-Agent%20Skills%20v1.0-emerald)](https://agentskills.io/specification)
+[![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
+[![SARIF 2.1.0](https://img.shields.io/badge/SARIF-2.1.0-blueviolet)](https://docs.oasis-open.org/sarif/sarif/v2.1.0/sarif-v2.1.0.html)
+[![Zero Runtime Dependencies](https://img.shields.io/badge/Dependencies-Zero%20(stdlib%20only)-success)](src/git_security_sentinel/)
 [![CI](https://github.com/INSVikrant54/Git-Security-Sentinel/actions/workflows/security-scan.yml/badge.svg)](https://github.com/INSVikrant54/Git-Security-Sentinel/actions)
-[![Zero Runtime Dependencies](https://img.shields.io/badge/Dependencies-Zero%20(stdlib%20only)-success)](scripts/scan_diff.py)
-[![AI Models](https://img.shields.io/badge/AI%20Models-Gemma%204%20%7C%20Ollama%20%7C%20Gemini-purple)](scripts/ai_review.py)
 
 ---
 
-## 1. Project Overview
+## 1. Overview
 
-**Git Security Sentinel** is a privacy-first, zero-runtime-dependency AI security reviewer and Agent Skill designed to safeguard the software development lifecycle before code is committed or published.
+**Git Security Sentinel** is a deterministic, privacy-first Git security scanner, developer CLI, and Agent Skill designed to safeguard the software development lifecycle before code is committed or published.
 
-It addresses code hygiene and secret exposure at the most critical juncture: the Git diff. Conforming to the [Agent Skills Open Standard](https://agentskills.io/specification), Git Security Sentinel functions both as an autonomous skill for AI coding assistants and as a developer CLI and CI pipeline tool.
-
----
-
-## 2. The Problem and Why It Matters
-
-Accidental credential exposure remains one of the most common causes of infrastructure breaches:
-- **Permanent Git History Leaks**: Once committed and pushed to a remote repository, credentials (API keys, AWS IAM keys, OAuth tokens) are indexed by scrapers within seconds. Revocation and rotation is expensive, disruptive, and often neglected.
-- **Privacy Trade-offs of Cloud Code Reviewers**: Many modern AI review platforms send private source code diffs to third-party hosted cloud APIs, introducing data leakage risks for proprietary codebases.
-- **Complex Dependency Chains**: Traditional static security platforms often require heavy node or python virtual environments, complex docker containers, or SaaS subscriptions just to inspect pre-commit changes.
-
-**Git Security Sentinel** solves this by delivering **instant deterministic scanning** using Python standard library alone, complemented by **privacy-preserving AI contextual review** running either locally (Gemma via Ollama) or through Google AI Studio (default: Gemma 4 31B).
+It inspects Git diffs for leaked API keys, tokens, connection strings, sensitive committed files, and dangerous code patterns using **47 detection rules** across 6 categories. Operating with **zero runtime dependencies outside the Python standard library**, Git Security Sentinel features SARIF 2.1.0 output for GitHub Advanced Security, native pre-commit framework support, inline comment suppression (`# nosec`), baseline migration, and an optional multi-provider contextual AI reviewer with suggested remediation diffs (`--fix`) and cost estimation (`--cost-estimate`).
 
 ---
 
-## 3. Solution and Architecture
+## 2. Core Features
 
-Git Security Sentinel operates via two decoupled layers:
-
-1. **Deterministic Static Engine (`scripts/scan_diff.py`)**:
-   - Zero third-party packages (Python standard library only).
-   - Fast, transparent regex rule engine matching verified credential patterns and unsafe dynamic constructs.
-   - Hunk-aware unified Git diff parser that pinpoints exact file paths and added line numbers.
-   - Deterministic redaction pipeline that scrubs matching tokens before printing or exporting.
-2. **Contextual AI Security Reviewer (`scripts/ai_review.py`)**:
-   - Automated contextual layer powered by local open-weight language models (e.g. `gemma3:4b` via [Ollama](https://ollama.com)) or Google AI Studio (default: `gemma-4-31b-it`).
-   - Evaluates whether findings are true security risks or benign test fixtures and generates safe code fixes.
-   - In-memory secret masking ensures credentials are never sent to AI models unredacted.
-
----
-
-## 4. Key Features
-
-- ⚡ **Zero Runtime Dependencies**: Runs immediately on any Python 3.9+ installation without `pip install`.
-- 🛡️ **Guaranteed Secret Redaction**: Deterministically masks secrets (`[REDACTED]`) in CLI output, JSON reports, sanitized patches, and AI prompts.
-- 🔒 **Privacy-First AI Triage**: Contextual reasoning via local Ollama models (zero telemetry) or Google AI Studio with pre-redacted diffs.
-- 🎯 **Flexible Scope**: Granular scanning options for `--staged`, `--unstaged`, `--all`, `--base <branch>`, or diff files via stdin.
-- 📦 **Agent Skills Open Standard**: Complete `SKILL.md` ready for integration with compatible AI agent environments.
-- 📜 **Open-Source Compliance**: Verifies the presence of root license files (`LICENSE`, `LICENSE.md`, etc.).
-- 🚦 **Predictable Exit Codes**: Returns `0` for clean scans, `1` when findings meet or exceed configured severity, and `2` for errors.
+- ⚡ **Zero Runtime Dependencies**: Pure Python standard library implementation (Python 3.9+). Core scanner and AI reviewer require no third-party package installations.
+- 🛡️ **47 Static Detection Rules**: Comprehensive coverage across Cloud Provider Keys, Auth Tokens, Database URIs, Sensitive Committed Files, Insecure Code Patterns (CWE-78, CWE-89, CWE-502, CWE-611, etc.), and License Compliance.
+- 🔒 **Guaranteed In-Memory Secret Redaction**: Deterministic sanitization replaces secrets with typed `[REDACTED:<TYPE>]` tokens before terminal rendering, JSON reporting, SARIF export, or AI prompt delivery. Negative lookahead ensures specific vendor tokens are never overwritten by generic credential regexes.
+- 📊 **OASIS SARIF 2.1.0 Schema Compliance**: Export scan results directly to SARIF (`--format sarif`) for instant integration with GitHub Code Scanning alerts and security dashboards.
+- 🪝 **Pre-Commit Framework & Direct Hook Installer**: Drop-in `.pre-commit-hooks.yaml` support or one-command installation into `.git/hooks/pre-commit` via `git-scan --install-hook`.
+- 🔕 **Granular False-Positive Suppression**: Support for line-level `# nosec` and `# sentinel:ignore` comments, polyglot syntax (`#`, `//`, `--`, `/* */`), rule-specific directives, `.sentinelignore` path exclusions, and CLI `--exclude`.
+- 📋 **Baseline Migration for Legacy Codebases**: Suppress known historical debt with `--baseline .sentinel.baseline` using stable SHA-256 fingerprints resilient to line shifts.
+- ⚙️ **Pure Stdlib Configuration**: Load project defaults from `.sentinel.yaml` or `.sentinel.toml` parsed completely with standard library utilities (no PyYAML required).
+- 🤖 **Contextual AI Reviewer with `--fix` & `--cost-estimate`**: AI triage supporting local Gemma via Ollama (100% offline and loopback-restricted) as well as Google AI Studio, OpenAI, and Groq. Generates non-mutating remediation diffs and transparent USD query cost estimations.
+- 🔄 **Self-Update Capability**: Integrated 24-hour cached PyPI version checker and one-command upgrade via `git-scan --upgrade`.
 
 ---
 
-## 5. Example Workflow
-
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Dev as Developer / Agent
-    participant Git as Git Working Tree
-    participant Scanner as scan_diff.py (Deterministic)
-    participant Patch as sanitized.patch
-    participant Report as scan-report.json
-    participant AI as ai_review.py (Local Ollama)
-
-    Dev->>Git: git add src/api.py
-    Dev->>Scanner: python scripts/scan_diff.py --staged --output scan-report.json
-    Scanner->>Git: git diff --staged -U0 --no-color
-    Git-->>Scanner: Unified Diff Hunks
-    Scanner->>Scanner: Parse Added Lines & Match Rules
-    Scanner->>Scanner: Redact Matching Tokens
-    Scanner-->>Report: Write Redacted Findings JSON
-    Scanner-->>Patch: Write Sanitized Patch (Optional)
-    Scanner-->>Dev: CLI Summary (Exit Code 0 or 1)
-
-    opt Local Contextual AI Review
-        Dev->>AI: python scripts/ai_review.py --report scan-report.json --model gemma3:4b
-        AI->>AI: Connect strictly to loopback (127.0.0.1:11434)
-        AI-->>Dev: Contextual Triage, False-Positive Analysis & Safer Code Alternatives
-    end
-```
-
----
-
-## 6. Architecture Diagram
+## 3. Architecture & Workflow
 
 ```mermaid
 flowchart TD
-    subgraph GitRepo ["Repository Under Inspection"]
+    subgraph GitContext ["Git Working Tree & Input Scope"]
         Staged["Staged Changes (--staged)"]
         Unstaged["Unstaged Changes (--unstaged)"]
-        Combined["All Local Changes (--all)"]
-        BranchBase["Merge-Base Diff (--base main)"]
-        LicenseFile["Root License Detection"]
+        All["All Changes (--all)"]
+        BaseBranch["Branch Comparison (--base main)"]
+        DiffStream["Diff File / Stdin (--diff-file)"]
     end
 
-    subgraph CoreEngine ["Git Security Sentinel Engine (scripts/scan_diff.py)"]
-        Parser["Unified Diff Hunk Parser"]
-        RuleMatcher["Deterministic Regex Rules Engine"]
-        Redactor["Deterministic In-Memory Redactor"]
-        JSONSerializer["Structured Schema Generator"]
+    subgraph ScannerCore ["Git Security Sentinel Core Engine (Pure Stdlib)"]
+        DiffParser["Unified Diff Hunk Parser (Line Accurate)"]
+        ConfigLoader["Config Loader (.sentinel.yaml / .sentinel.toml)"]
+        PathFilter["Path Filter (.sentinelignore & --exclude)"]
+        RuleCatalog["47 Detection Rules (6 Categories)"]
+        Suppression["Inline Comment Filter (# nosec, polyglot)"]
+        Baseline["SHA-256 Fingerprint Baseline Filter"]
+        Redactor["Sequential Redaction Engine (Negative Lookahead)"]
     end
 
-    subgraph Artifacts ["Generated Outputs"]
-        TerminalOut["Actionable Terminal Summary"]
-        JSONReport["scan-report.json (Redacted)"]
-        SanitizedPatch["sanitized.patch (Safe for Sharing)"]
+    subgraph OutputTargets ["Formatted Output & Integrations"]
+        Terminal["ANSI Color Terminal Output"]
+        JSONReport["scan-report.json"]
+        SARIFReport["SARIF 2.1.0 (GitHub Code Scanning)"]
+        RedactedPatch["sanitized.patch (Safe for Sharing)"]
     end
 
-    subgraph OptionalAI ["Privacy-Preserving AI Reviewer (scripts/ai_review.py)"]
-        LoopbackGuard["Loopback Enforcer (127.0.0.1 / localhost)"]
-        LocalOllama["Local Ollama Daemon (e.g., gemma3:4b)"]
-        AIReport["Contextual Risk Evaluation & Mitigation Advice"]
+    subgraph OptionalAI ["Contextual AI Security Reviewer"]
+        LoopbackGuard["Loopback Isolation Enforcer (127.0.0.1)"]
+        AIReviewer["Multi-Provider Reviewer (Ollama / Gemini / OpenAI / Groq)"]
+        RemediationDiff["Suggested Fix Diffs (--fix)"]
+        CostEstimate["Token & USD Calculation (--cost-estimate)"]
     end
 
-    Staged --> Parser
-    Unstaged --> Parser
-    Combined --> Parser
-    BranchBase --> Parser
-    LicenseFile --> RuleMatcher
+    Staged --> DiffParser
+    Unstaged --> DiffParser
+    All --> DiffParser
+    BaseBranch --> DiffParser
+    DiffStream --> DiffParser
 
-    Parser --> RuleMatcher
-    RuleMatcher --> Redactor
-    Redactor --> JSONSerializer
+    ConfigLoader -.-> ScannerCore
+    PathFilter --> DiffParser
+    DiffParser --> RuleCatalog
+    RuleCatalog --> Suppression
+    Suppression --> Baseline
+    Baseline --> Redactor
 
-    JSONSerializer --> TerminalOut
-    JSONSerializer --> JSONReport
-    JSONSerializer --> SanitizedPatch
+    Redactor --> Terminal
+    Redactor --> JSONReport
+    Redactor --> SARIFReport
+    Redactor --> RedactedPatch
 
     JSONReport -.-> LoopbackGuard
-    SanitizedPatch -.-> LoopbackGuard
-    LoopbackGuard <--> LocalOllama
-    LoopbackGuard --> AIReport
+    LoopbackGuard --> AIReviewer
+    AIReviewer --> RemediationDiff
+    AIReviewer --> CostEstimate
 ```
 
 ---
 
-## 7. Repository Structure
+## 4. Installation
 
-```
-git-security-sentinel/
-├── SKILL.md                          # Agent Skill specification (YAML frontmatter + instructions)
-├── README.md                         # Comprehensive documentation and project guide
-├── LICENSE                           # MIT Open Source License
-├── .gitignore                        # Python caches, local scan outputs, patch files
-├── CONTRIBUTING.md                   # Developer guide and coding conventions
-├── SECURITY.md                       # Vulnerability reporting procedure and privacy guarantees
-├── .github/
-│   └── workflows/
-│       └── security-scan.yml         # Multi-version Python CI pipeline
-├── scripts/
-│   ├── scan_diff.py                  # Core deterministic diff scanner (Zero dependencies)
-│   └── ai_review.py                  # Local Ollama AI reviewer (Standard library HTTP client)
-├── tests/
-│   └── test_scan_diff.py             # Built-in unittest test suite (22+ unit and integration tests)
-├── examples/
-│   ├── clean-report.json             # Example report demonstrating clean scan with 0 findings
-│   └── findings-report.json          # Example report demonstrating redacted multi-severity findings
-└── references/
-    └── detection-rules.md            # Complete catalog of detection rules and mitigation steps
+### Option 1: Install via pip
+```bash
+pip install git-security-sentinel
 ```
 
----
-
-## 8. Prerequisites
-
-- **Python**: Version 3.9 or newer (tested on 3.9, 3.10, 3.11, 3.12, 3.13).
-- **Git**: Installed and available in your system `PATH`.
-- **Operating System**: Linux, macOS, or Windows.
-- *(Optional)* **Ollama**: For AI contextual review ([https://ollama.com](https://ollama.com)).
-
----
-
-## 9. Installation and Setup
-
-Git Security Sentinel requires **no pip dependencies**. Clone the repository and run immediately:
-
+### Option 2: Install from Source (Editable Development)
 ```bash
 git clone https://github.com/INSVikrant54/Git-Security-Sentinel.git
 cd Git-Security-Sentinel
-python scripts/scan_diff.py --help
+pip install -e .
 ```
 
----
-
-## 10. Static Scan Commands
-
-### Scan Staged Changes (Pre-Commit Check)
+### Option 3: Zero-Install Standalone Execution
+Git Security Sentinel has zero runtime dependencies and can be executed directly from a cloned repository:
 ```bash
+# Direct module execution:
+python -m git_security_sentinel --staged
+
+# Or via backwards-compatible script wrappers:
 python scripts/scan_diff.py --staged
 ```
 
-> **💡 Pro-Tip: 1-Word Shortcut (`git scan` & `git scan --ai`)**  
-> Teach Git to run the scanner automatically by adding an alias:  
-> ```bash
-> git config alias.scan "!python scripts/scan_diff.py --staged"
-> ```  
-> From then on, simply run:  
-> ```bash
-> # Deterministic offline scan:
-> git scan
->
-> # Unified AI Security Review (Gemma 3 / Ollama or Gemini):
-> git scan --ai
-> ```  
-> *Want AI review enabled on every staged scan by default?*  
-> ```bash
-> git config alias.scan "!python scripts/scan_diff.py --staged --ai"
-> ```
+---
 
-### Unified AI-Powered Diff Scan (Gemma & Multi-Provider)
-Run deterministic secret detection, in-memory redaction, and local Gemma contextual analysis in a **single command**:
+## 5. Quick Start
+
+### 1. Scan Staged Changes (Pre-Commit Check)
 ```bash
-# 1. Automatic: Uses local Gemma (via Ollama) or cloud key if configured:
-python scripts/scan_diff.py --staged --ai
-
-# 2. Local Gemma with Ollama explicitly:
-python scripts/scan_diff.py --staged --ai --provider ollama --model gemma3:4b
-
-# 3. Google AI Studio (Gemini):
-python scripts/scan_diff.py --staged --ai --provider gemini --model gemini-1.5-flash
+git-scan --staged
 ```
 
-### Scan Unstaged Changes (Working Tree Review)
+### 2. Scan All Local Changes
 ```bash
-python scripts/scan_diff.py --unstaged
+git-scan --all
 ```
 
-### Scan All Uncommitted Local Changes
+### 3. Generate SARIF 2.1.0 Report for CI / GitHub Security
 ```bash
-python scripts/scan_diff.py --all
+git-scan --base main --format sarif --output results.sarif
 ```
 
-### Scan Branch Against Base (Pull Request Simulation)
+### 4. Run Contextual AI Review with Remediation Diffs
 ```bash
-python scripts/scan_diff.py --base main
+# Standalone AI review of scan report with fix diffs:
+git-sentinel-ai --report scan-report.json --fix
+
+# Combined unified staged scan with local Gemma AI review:
+git-scan --staged --ai --fix --cost-estimate
 ```
 
-### Generate Machine-Readable JSON Report
+### 5. Install Git Pre-Commit Hook
 ```bash
-python scripts/scan_diff.py --all --format json --output scan-report.json
-```
-
-### Export a Sanitized Diff Patch (Secrets Stripped)
-```bash
-python scripts/scan_diff.py --all --redacted-diff-out sanitized.patch
-```
-
-### Adjust Failure Severity Threshold
-```bash
-# Fail only on critical findings (exit code 1)
-python scripts/scan_diff.py --all --severity-threshold critical
-
-# Fail on medium, high, or critical findings
-python scripts/scan_diff.py --all --severity-threshold medium
+git-scan --install-hook
 ```
 
 ---
 
-## 11. AI Reviewer Setup & Multi-Provider Guide
+## 6. CLI Reference
 
-The AI reviewer provides deep contextual triage and safe code remediation, supporting **local open-weight models** (Gemma via Ollama) as well as **cloud AI providers** (Google AI Studio, Groq, OpenAI) using Python's standard library (`urllib.request`) with zero pip dependencies.
+### `git-scan` / `git-security-sentinel`
 
-### Option A: Local Ollama & Gemma (100% Private, Zero Key, Offline)
-1. Install and start Ollama from [ollama.com](https://ollama.com): `ollama serve`
-2. Pull Gemma 3 or Gemma 2:
-   ```bash
-   ollama pull gemma3:4b
-   # or
-   ollama pull gemma2:2b
-   ```
-3. Run the review directly:
-   ```bash
-   git scan --ai
-   # or standalone:
-   python scripts/ai_review.py --report scan-report.json --provider ollama --model gemma3:4b
-   ```
+The primary scanner CLI inspects diffs, evaluates rules, filters suppressions, and formats findings:
 
-### Option B: Google AI Studio (Default: Gemma 4 31B)
-1. Get a free API key from [aistudio.google.com](https://aistudio.google.com).
-2. Set your API key in `.env` or environment:
-   ```powershell
-   Set-Content -Path ".env" -Value "GEMINI_API_KEY=your_key_here"
-   # or
-   $env:GEMINI_API_KEY = "your_key_here"
-   ```
-3. Run the review (automatically defaults to **Gemma 4 31B**):
-   ```bash
-   git scan --ai --provider gemini
-   # or standalone:
-   python scripts/ai_review.py --report scan-report.json --provider gemini --model gemma-4-31b-it
-   ```
+```
+usage: git-scan [-h] [--staged | --unstaged | --all | --base BRANCH |
+                --diff-file FILE] [--version] [--repo-root PATH]
+                [--format {text,json,sarif}] [--install-hook] [--force]
+                [--upgrade] [--no-update-check] [--output FILE]
+                [--redacted-diff-out FILE]
+                [--severity-threshold {critical,high,medium,low}]
+                [--exclude PATTERN] [--baseline FILE] [--create-baseline]
+                [--config FILE] [--no-color] [--color] [--verbose] [--quiet]
+                [--ai] [--provider {auto,ollama,gemini,openai,groq}]
+                [--model MODEL_NAME] [--ai-endpoint URL] [--allow-remote]
+                [--ai-timeout SECONDS] [--fix] [--cost-estimate]
+```
 
-### Option C: Groq or OpenAI
-1. Set the respective API key:
-   ```powershell
-   $env:GROQ_API_KEY = "gsk_..."      # For ultra-fast Groq Llama-3.3-70B
-   $env:OPENAI_API_KEY = "sk-..."     # For OpenAI GPT-4o-mini
-   ```
-2. Run the review:
-   ```bash
-   python scripts/ai_review.py --report scan-report.json --provider groq --model llama-3.3-70b-versatile
-   python scripts/ai_review.py --report scan-report.json --provider openai --model gpt-4o-mini
-   ```
+#### Diff Scope Options (Mutually Exclusive)
+- `--staged`: Scan staged (index/cached) git changes.
+- `--unstaged`: Scan unstaged working directory changes.
+- `--all`: Scan all uncommitted changes (both staged and unstaged).
+- `--base <branch>`: Scan changes between current branch and merge-base of `<branch>`.
+- `--diff-file <file>`: Scan unified diff from file, or pass `-` to read from stdin.
 
-### Option D: Machine-Readable Structured JSON Mode (For AI Agents & Bots)
-Add `--format json` to any provider command to receive validated JSON triage:
+#### Output & Reporting Options
+- `--format {text,json,sarif}`: Console output format (default: `text`).
+- `--output <file>`: Write full structured JSON scan report to specified file.
+- `--redacted-diff-out <file>`: Write sanitized unified diff with all secrets scrubbed.
+- `--severity-threshold {critical,high,medium,low}`: Minimum severity triggering exit code `1` (default: `high`).
+- `--no-color` / `--color`: Disable or force ANSI color formatting.
+- `--verbose`, `-v`: Output detailed diagnostic and rule evaluation info.
+- `--quiet`, `-q`: Suppress banners and output nothing on clean scans.
+
+#### Suppression & Baseline Options
+- `--exclude <pattern>`: Exclude file glob patterns (repeatable or comma-separated).
+- `--baseline <file>`: Suppress findings present in specified baseline file.
+- `--create-baseline`: Output JSON baseline with finding fingerprints and exit `0`.
+- `--config <file>`: Path to `.sentinel.yaml` or `.sentinel.toml` configuration file.
+
+#### Lifecycle & Utility Options
+- `--install-hook`: Install pre-commit hook into `.git/hooks/pre-commit`.
+- `--force`: Overwrite existing non-sentinel hook during installation.
+- `--upgrade`: Upgrade package to latest release from PyPI.
+- `--no-update-check`: Disable automatic 24-hour background PyPI version check.
+- `--version`: Print version number and exit.
+
+#### Inline AI Review Options
+- `--ai`: Run contextual AI review on findings.
+- `--provider {auto,ollama,gemini,openai,groq}`: AI inference provider (default: `auto`).
+- `--model <name>`: Model override (e.g. `gemma3:4b`, `gemma-4-26b-a4b-it`, `gpt-4o-mini`).
+- `--fix`: Display suggested remediation diffs without modifying files on disk.
+- `--cost-estimate`: Display token approximations and estimated query cost in USD.
+- `--allow-remote`: Permit non-loopback endpoints for Ollama (loopback enforced by default).
+
+---
+
+### `git-sentinel-ai`
+
+The dedicated multi-provider AI security reviewer parses JSON scan reports, reasons over risks, and delivers remediation alternatives:
+
+```
+usage: git-sentinel-ai [-h] [--version] --report JSON_FILE [--diff DIFF_FILE]
+                       [--provider {auto,ollama,gemini,openai,groq}]
+                       [--model MODEL_NAME] [--endpoint URL] [--allow-remote]
+                       [--timeout SECONDS] [--format {text,json}] [--fix]
+                       [--cost-estimate] [--output OUT_FILE]
+```
+
+#### Provider Setup & Keys
+- **Ollama (Default: Local, Offline, Zero Key)**:
+  - Install Ollama from [ollama.com](https://ollama.com) and pull Gemma: `ollama pull gemma3:4b`
+  - Runs against local loopback `127.0.0.1` (port 11434) with zero telemetry.
+- **Google AI Studio (Gemini)**:
+  - Set `GEMINI_API_KEY` in environment or `.env`.
+  - Default model: `gemma-4-26b-a4b-it` (or `gemini-1.5-flash`).
+- **OpenAI**:
+  - Set `OPENAI_API_KEY` in environment. Model: `gpt-4o-mini`.
+- **Groq**:
+  - Set `GROQ_API_KEY` in environment. Model: `llama-3.3-70b-versatile`.
+
+---
+
+## 7. Configuration (.sentinel.yaml / .sentinel.toml)
+
+Git Security Sentinel automatically detects `.sentinel.yaml` or `.sentinel.toml` in your repository root, parsed entirely with standard library code:
+
+### Sample `.sentinel.yaml`
+```yaml
+# Git Security Sentinel Configuration
+severity_threshold: high
+no_color: false
+verbose: false
+
+exclude:
+  - "tests/**"
+  - "*.min.js"
+  - "fixtures/**"
+
+rules:
+  disable:
+    - "risk.localhost_endpoint"
+    - "compliance.security_todo"
+
+ai:
+  provider: ollama
+  model: "gemma3:4b"
+  allow_remote: false
+```
+
+### Sample `.sentinel.toml`
+```toml
+# Git Security Sentinel Configuration
+severity_threshold = "high"
+no_color = false
+verbose = false
+
+exclude = [
+  "tests/**",
+  "*.min.js",
+  "fixtures/**"
+]
+
+[rules]
+disable = [
+  "risk.localhost_endpoint",
+  "compliance.security_todo"
+]
+
+[ai]
+provider = "ollama"
+model = "gemma3:4b"
+allow_remote = false
+```
+
+*Precedence*: Command-line arguments always override values defined in configuration files.
+
+---
+
+## 8. False-Positive Suppression Syntax
+
+### 1. Inline Comment Suppression
+Add `# nosec` or `# sentinel:ignore` to the end of any line to suppress findings on that line:
+
+```python
+# Suppress all rules on this line:
+test_token = "mock_secret_value"  # nosec
+
+# Suppress only a specific rule:
+aws_key = "AKIA<16-alphanumerics>"  # nosec secret.aws_access_key
+
+# Multiple rules delimited by semicolons or commas:
+eval(payload)  # sentinel:ignore risk.eval_execution; insecure_code.shell_injection
+```
+
+### 2. Polyglot Comment Support
+Comment directives work across programming languages:
+- **Python / Shell / YAML / Ruby**: `# nosec`
+- **JavaScript / TypeScript / C / Go / Rust**: `// nosec` or `/* nosec */`
+- **SQL / Lua**: `-- nosec`
+
+### 3. File & Path Exclusions (`.sentinelignore`)
+Create a `.sentinelignore` file in the repo root using standard gitignore glob patterns:
+```gitignore
+# Ignore test fixtures and generated mocks
+tests/fixtures/**
+**/*.generated.py
+!tests/fixtures/critical_security_test.py
+```
+
+### 4. Baseline File Migration
+When introducing Git Security Sentinel to existing projects:
 ```bash
-python scripts/ai_review.py --report scan-report.json --format json --output ai-review.json
+# Capture current known issues into a baseline:
+git-scan --all --create-baseline > .sentinel.baseline
+
+# Scan changes while ignoring historical findings:
+git-scan --staged --baseline .sentinel.baseline
 ```
-In `--format json` mode, findings are structured with:
-- `assessment`: `genuine_risk | likely_false_positive | context_dependent`
-- `risk_explanation`: Contextual threat explanation.
-- `safe_alternative`: Remediation snippet or pattern.
+Baseline entries use SHA-256 stable fingerprints computed from rule ID, relative path, and normalized code content, remaining valid even if line numbers shift due to unrelated edits.
 
 ---
 
-## 12. Sample JSON Report
+## 9. Pre-Commit Integration
 
-Below is an authentic sample JSON output generated by `scripts/scan_diff.py` (available in `examples/findings-report.json`):
+### Using the Pre-Commit Framework
+Add Git Security Sentinel to your `.pre-commit-config.yaml`:
 
-```json
-{
-  "scanner": "git-security-sentinel",
-  "version": "1.0.0",
-  "status": "completed",
-  "scan_mode": "all",
-  "findings": [
-    {
-      "rule_id": "secret.aws_access_key",
-      "category": "secrets",
-      "severity": "critical",
-      "confidence": "high",
-      "file": "deploy/terraform/main.tf",
-      "line": 42,
-      "message": "Potential AWS Access Key ID detected.",
-      "evidence": "access_key = \"[REDACTED:AWS_KEY_ID]\"",
-      "recommendation": "Never hardcode AWS keys. Use environment variables (AWS_ACCESS_KEY_ID), IAM roles, or AWS Secrets Manager."
-    },
-    {
-      "rule_id": "secret.github_token",
-      "category": "secrets",
-      "severity": "critical",
-      "confidence": "high",
-      "file": "src/services/github_sync.py",
-      "line": 18,
-      "message": "Potential GitHub personal access or OAuth token detected.",
-      "evidence": "gh_token = \"[REDACTED:GITHUB_TOKEN]\"",
-      "recommendation": "Revoke and rotate the GitHub token immediately in GitHub Settings > Developer settings."
-    }
-  ],
-  "license": {
-    "root_license_present": true,
-    "license_file": "LICENSE"
-  },
-  "summary": {
-    "total": 2,
-    "critical": 2,
-    "high": 0,
-    "medium": 0,
-    "low": 0
-  },
-  "errors": []
-}
+```yaml
+repos:
+  - repo: https://github.com/INSVikrant54/Git-Security-Sentinel
+    rev: v1.1.0
+    hooks:
+      - id: git-security-sentinel
+        stages: [pre-commit]
+```
+
+### Direct Hook Installation
+If you prefer not to manage the `pre-commit` Python package, install the hook directly into your local Git repository:
+
+```bash
+# Install pre-commit hook into .git/hooks/pre-commit:
+git-scan --install-hook
+
+# Overwrite existing hook script if needed:
+git-scan --install-hook --force
 ```
 
 ---
 
-## 13. Detection Rules and Severity Definitions
+## 10. Detection Rules Catalog (47 Rules)
 
-| Rule ID | Category | Severity | Confidence | Target Pattern |
+| # | Rule ID | Category | Severity | Description |
 |---|---|---|---|---|
-| `secret.aws_access_key` | `secrets` | `critical` | `high` | Standard AWS Key IDs (`AKIA...`, `ASIA...` + 16 chars) |
-| `secret.aws_secret_key` | `secrets` | `critical` | `high` | `aws_secret_key` assignments with 40-char Base64 strings |
-| `secret.github_token` | `secrets` | `critical` | `high` | Personal access & OAuth tokens (`ghp_`, `gho_`, `github_pat_`) |
-| `secret.slack_token` | `secrets` | `high` | `high` | Slack API tokens (`xoxb-`, `xoxp-`, `xoxa-`, `xoxs-`) |
-| `secret.private_key` | `secrets` | `critical` | `high` | PEM/OpenSSH headers (`-----BEGIN ... PRIVATE KEY-----`) |
-| `secret.generic_credential` | `secrets` | `high` | `medium` | Hardcoded assignments to `password`, `api_key`, `client_secret` |
-| `risk.eval_execution` | `insecure_code` | `medium` | `medium` | Dangerous dynamic code execution (`eval()`, `exec()`) |
-| `risk.localhost_endpoint` | `configuration` | `low` | `high` | Hardcoded loopback service URIs (`http://localhost...`) |
-| `compliance.root_license` | `compliance` | `info` | `high` | Presence of `LICENSE`, `LICENSE.md`, `LICENSE.txt`, `COPYING` |
+| 1 | `secret.aws_access_key` | `secrets` | `critical` | AWS Access Key ID (`AKIA...`, `ASIA...`) |
+| 2 | `secret.aws_secret_key` | `secrets` | `critical` | AWS 40-character Base64 secret access key |
+| 3 | `secret.stripe_key` | `secrets` | `critical` | Stripe standard and restricted API keys (`sk_live_`, `rk_live_`) |
+| 4 | `secret.twilio_key` | `secrets` | `critical` | Twilio Account SID (`AC...`) and API key (`SK...`) |
+| 5 | `secret.sendgrid_key` | `secrets` | `critical` | SendGrid API keys (`SG.<22>.<43>`) |
+| 6 | `secret.mailgun_key` | `secrets` | `critical` | Mailgun API key (`key-<32>`) |
+| 7 | `secret.mailchimp_key` | `secrets` | `high` | Mailchimp 32-char MD5 key with `-usXX` datacenter suffix |
+| 8 | `secret.square_token` | `secrets` | `critical` | Square access tokens (`sq0atp-`) and client secrets (`sq0csp-`) |
+| 9 | `secret.shopify_token` | `secrets` | `critical` | Shopify admin API tokens (`shpat_`), secrets, partner tokens |
+| 10 | `secret.heroku_key` | `secrets` | `critical` | Heroku 36-char UUID API token |
+| 11 | `secret.datadog_key` | `secrets` | `critical` | Datadog API/application keys |
+| 12 | `secret.newrelic_key` | `secrets` | `critical` | New Relic user keys (`NRAK-`), ingest keys (`NRII-`), license keys |
+| 13 | `secret.github_token` | `secrets` | `critical` | GitHub Personal Access Tokens (`ghp_`, `github_pat_`, OAuth) |
+| 14 | `secret.slack_token` | `secrets` | `high` | Slack bot, user, or workspace tokens (`xoxb-`, `xoxp-`, `xoxa-`) |
+| 15 | `secret.jwt_token` | `secrets` | `high` | Hardcoded JSON Web Tokens (`eyJ...`) |
+| 16 | `secret.bearer_token` | `secrets` | `high` | Hardcoded HTTP Authorization Bearer headers |
+| 17 | `secret.basic_auth` | `secrets` | `high` | Credentials in URLs or Basic Auth headers |
+| 18 | `secret.npm_token` | `secrets` | `critical` | npm access tokens (`npm_<36>`) |
+| 19 | `secret.pypi_token` | `secrets` | `critical` | PyPI upload API tokens (`pypi-AgEI...`) |
+| 20 | `secret.discord_bot_token` | `secrets` | `critical` | Discord bot authentication token |
+| 21 | `secret.telegram_bot_token` | `secrets` | `critical` | Telegram Bot API HTTP token |
+| 22 | `secret.mongodb_uri` | `secrets` | `critical` | MongoDB connection URI with embedded credentials |
+| 23 | `secret.postgres_uri` | `secrets` | `critical` | PostgreSQL connection URI with credentials |
+| 24 | `secret.mysql_uri` | `secrets` | `critical` | MySQL connection URI with credentials |
+| 25 | `secret.redis_uri` | `secrets` | `high` | Redis URI with password authentication |
+| 26 | `secret.amqp_uri` | `secrets` | `high` | AMQP connection string with credentials |
+| 27 | `secret.firebase_key` | `secrets` | `critical` | Firebase FCM legacy server key |
+| 28 | `secret.gcp_service_account` | `secrets` | `critical` | GCP Service Account credentials JSON |
+| 29 | `file.env_file` | `sensitive_files` | `critical` | Committing `.env` configuration files |
+| 30 | `file.ssh_rsa_key` | `sensitive_files` | `critical` | Committing `id_rsa` SSH private key |
+| 31 | `file.ssh_ed25519_key` | `sensitive_files` | `critical` | Committing `id_ed25519` SSH private key |
+| 32 | `file.pem_key` | `sensitive_files` | `critical` | Committing raw `.pem`, `.p12`, `.pfx`, `.key` files |
+| 33 | `insecure_code.shell_injection` | `insecure_code` | `high` | Shell injection via `shell=True` or `os.system` (CWE-78) |
+| 34 | `insecure_code.pickle_deserialization` | `insecure_code` | `critical` | Arbitrary code execution via `pickle.loads` (CWE-502) |
+| 35 | `insecure_code.unsafe_yaml` | `insecure_code` | `high` | Unsafe YAML load without `SafeLoader` (CWE-502) |
+| 36 | `insecure_code.sql_concatenation` | `insecure_code` | `high` | SQL string concatenation / f-strings (CWE-89) |
+| 37 | `insecure_code.xxe_injection` | `insecure_code` | `high` | XML External Entity parsing without entity disable (CWE-611) |
+| 38 | `insecure_code.temp_credential` | `insecure_code` | `high` | Temporary/mock passwords committed to source |
+| 39 | `insecure_code.debug_enabled` | `insecure_code` | `medium` | Debug mode enabled in production (`DEBUG` set `True`) (CWE-215) |
+| 40 | `insecure_code.wildcard_cors` | `insecure_code` | `medium` | Wildcard CORS origin allowing any third-party domain (CWE-942) |
+| 41 | `insecure_code.unverified_ssl` | `insecure_code` | `high` | SSL verification disabled (`verify` set `False`) (CWE-295) |
+| 42 | `risk.eval_execution` | `insecure_code` | `medium` | Dynamic expression evaluation via `eval` / `exec` (CWE-95) |
+| 43 | `risk.localhost_endpoint` | `configuration` | `low` | Hardcoded loopback URL in deployed code |
+| 44 | `secret.private_key` | `secrets` | `critical` | PEM / RSA / EC / OpenSSH private key header block |
+| 45 | `secret.generic_credential` | `secrets` | `high` | Hardcoded password, API key, or client secret assignment |
+| 46 | `compliance.security_todo` | `compliance` | `low` | Unresolved security debt markers (`TODO: security`, `FIXME: cve`) |
+| 47 | `compliance.root_license` | `compliance` | `low` | Missing root open-source license file |
 
-*For complete rule logic, false-positive exclusions, and remediation details, see [references/detection-rules.md](references/detection-rules.md).*
+*For complete regular expressions, true/false positive examples, and remediation guides, consult [references/detection-rules.md](references/detection-rules.md).*
 
 ---
 
-## 14. Privacy and Secret-Redaction Guarantees
+## 11. GitHub Actions Integration & SARIF Upload
 
-Git Security Sentinel enforces strict privacy invariants:
-
-1. **In-Memory Token Masking**: Detected credentials are intercepted and replaced with `[REDACTED:<TYPE>]` at the detection stage before any serialization occurs.
-2. **Safe Artifact Generation**: Reports saved via `--output` and patches generated via `--redacted-diff-out` never contain raw secret bytes.
-3. **Loopback Protection**: `scripts/ai_review.py` rejects remote endpoints by default, ensuring code diffs are never accidentally dispatched across the internet.
-
----
-
-## 15. GitHub Actions Integration
-
-Git Security Sentinel integrates effortlessly into GitHub Actions CI workflows without installing third-party Python packages:
+Add Git Security Sentinel directly into your repository's CI pipeline with automatic SARIF upload to GitHub Code Scanning:
 
 ```yaml
 name: Security Scan
-on: [pull_request]
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  security-events: write
 
 jobs:
-  security-check:
+  security-scan:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Scan PR Changes
+      - name: Generate SARIF Security Report
         run: |
-          python scripts/scan_diff.py --base "${{ github.event.pull_request.base.ref }}" --severity-threshold high
+          python -m git_security_sentinel --base origin/${{ github.base_ref || 'main' }} --format sarif --output results.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
+
+      - name: Enforce Security Gates (Fail on High/Critical)
+        run: |
+          python -m git_security_sentinel --base origin/${{ github.base_ref || 'main' }} --severity-threshold high
 ```
 
 ---
 
-## 16. Known Limitations and False Positives
+## 12. Privacy Guarantees & Threat Model
 
-- **Static Scope**: Static regular expressions cannot determine whether a detected API key is active or functional in external third-party services.
-- **Obfuscated Credentials**: Tokens generated dynamically via string concatenation or environment decoders cannot be detected by static regex scanning alone.
-- **Benign Configuration**: Test fixtures containing non-sensitive test passwords or loopback bindings (`localhost:3000`) may be flagged with `medium` or `low` severities; use `--severity-threshold high` to suppress these in automated CI gates.
+Git Security Sentinel adheres to the following privacy invariants:
 
----
-
-## 17. Threat Model and Non-Goals
-
-### In Scope
-- Detecting accidental credential commits in Git diffs.
-- Identifying high-risk dynamic execution functions (`eval()`, `exec()`).
-- Highlighting unparameterized localhost endpoints before deployment.
-- Verifying root open-source license file presence.
-
-### Non-Goals
-- Full Abstract Syntax Tree (AST) deep taint analysis.
-- Live network verification or active credential validation.
-- Automatic, unprompted code modification or auto-commits.
-- Replacing comprehensive enterprise secret vaults.
+1. **Deterministic In-Memory Redaction**:
+   - Secrets are masked immediately during detection before reaching any serialization, formatter, or output layer.
+   - Negative lookaheads ensure vendor-specific tokens retain distinct redaction identifiers without leaking raw characters.
+2. **Offline & Loopback Default for AI Review**:
+   - The AI reviewer connects strictly to `127.0.0.1` / `localhost` by default when running Ollama.
+   - Remote Ollama endpoints require explicit opt-in via `--allow-remote`.
+3. **No Unprompted Disk Mutations**:
+   - `--fix` generates suggested diff snippets for human inspection; it **never modifies files on disk**.
+4. **Predictable Exit Codes**:
+   - `0`: Scan clean or findings below threshold.
+   - `1`: Findings meeting or exceeding `--severity-threshold` detected.
+   - `2`: CLI argument or execution error.
 
 ---
 
-## 18. Contribution Guidelines
+## 13. Contributing
 
-Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on our code style, test expectations, and pull request workflow.
-
----
-
-## 19. Roadmap
-
-- [x] Deterministic diff scanning for staged, unstaged, and base branch changes.
-- [x] In-memory secret redaction pipeline.
-- [x] Root license verification.
-- [x] Agent Skills Open Standard (`SKILL.md`) integration.
-- [x] Universal AI contextual reviewer (Local Ollama Gemma & Google AI Studio Gemma 4).
-- [x] GitHub Actions multi-version CI workflow.
-- [ ] Pre-commit hook installer (`python scripts/scan_diff.py --install-hook`).
-- [ ] Custom user rule configuration file (`.sentinelrules.json`).
-- [ ] SARIF output format for GitHub Advanced Security code scanning tabs.
+Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on code style, rule authoring, standard library constraints, and testing workflows.
 
 ---
 
-## 20. License
+## 14. License
 
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for complete terms.
-
----
-
-## 21. Hacktoberfest Hack Day Ranchi 2026 Submission Context
-
-- **Category**: Best Open-Source AI Project
-- **Event**: Hacktoberfest Hack Day Ranchi 2026
-- **Specification**: Conforms to the [Agent Skills Open Standard](https://agentskills.io/specification).
-- **Core Value Proposition**: Demonstrating that open-source AI security tools can be private, transparent, dependency-free, and accessible to any developer with either zero-key local models (Gemma on Ollama) or hosted AI APIs (Google AI Studio Gemma 4).
