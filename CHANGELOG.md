@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [1.2.0] - 2026-11-22
 
 ### Added
 - **One-Command Setup**: `git scan --init` creates `.sentinel.yaml`, `.sentinelignore`, `.env.example`, and installs the pre-commit hook. `--key NAME=VALUE` writes cloud API keys into the local gitignored `.env`, and `--force` is required to overwrite existing files.

@@ -393,7 +393,7 @@ Add Git Security Sentinel to your `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/INSVikrant54/Git-Security-Sentinel
-    rev: v1.1.0
+    rev: v1.2.0
     hooks:
       - id: git-security-sentinel
         stages: [pre-commit]

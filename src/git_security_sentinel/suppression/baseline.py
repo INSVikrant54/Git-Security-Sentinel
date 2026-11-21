@@ -125,7 +125,7 @@ class BaselineFilter:
 
         data = {
             "format_version": "1.0",
-            "generator": "git-security-sentinel 1.1.0",
+            "generator": "git-security-sentinel 1.2.0",
             "findings": entries,
         }
         if p.parent and not p.parent.exists():

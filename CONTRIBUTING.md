@@ -51,7 +51,7 @@ Git-Security-Sentinel/
 │       └── publish.yml                # PyPI Trusted Publishing workflow
 ├── src/
 │   └── git_security_sentinel/
-│       ├── __init__.py                # Package version (__version__ = "1.1.0")
+│       ├── __init__.py                # Package version (__version__ = "1.2.0")
 │       ├── __main__.py                # python -m git_security_sentinel entry point
 │       ├── cli.py                     # Main scanner CLI (git-scan, git-security-sentinel)
 │       ├── ai_cli.py                  # AI reviewer CLI (git-sentinel-ai)

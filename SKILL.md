@@ -3,12 +3,12 @@ name: git-security-sentinel
 description: Deterministic, privacy-first Git security scanner with 47 detection rules, false-positive suppression, SARIF 2.1.0 output, and contextual AI review. Use when scanning staged, unstaged, or pull request branch changes for leaked credentials, secrets, insecure code patterns, and license compliance before committing or publishing code.
 license: MIT
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   author: "Git Security Sentinel Contributors"
   repository: "https://github.com/INSVikrant54/Git-Security-Sentinel"
 ---
 
-# Git Security Sentinel: Agent Skill Guide (v1.1.0)
+# Git Security Sentinel: Agent Skill Guide (v1.2.0)
 
 This skill guides an AI coding agent through executing deterministic Git diff security scans, interpreting structured JSON and SARIF 2.1.0 reports, filtering baseline findings, respecting inline `# nosec` and `.sentinelignore` suppressions, generating non-mutating remediation diffs (`--fix`), estimating AI query costs (`--cost-estimate`), and advising developers safely without exposing credentials.
 

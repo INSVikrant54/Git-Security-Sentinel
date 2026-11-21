@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 import re
 from typing import Any, Callable, Dict, List, Optional, Pattern
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 SCANNER_NAME = "git-security-sentinel"
 
 # Accepted root license filenames
