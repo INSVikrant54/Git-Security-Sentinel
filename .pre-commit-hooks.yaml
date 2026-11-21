@@ -1,0 +1,17 @@
+- id: git-security-sentinel
+  name: Git Security Sentinel
+  description: Privacy-first Git security scanner for secrets, tokens, and insecure code patterns.
+  entry: git-scan --staged
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]
+
+- id: git-scan
+  name: git-scan
+  description: Fast staged Git diff security scanner.
+  entry: git-scan --staged
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]

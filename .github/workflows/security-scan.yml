@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  security-events: write
 
 jobs:
   test:
@@ -53,6 +54,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Generate SARIF Security Report
+        run: |
+          python scripts/scan_diff.py --base origin/${{ github.base_ref }} --format sarif --output results.sarif
+        continue-on-error: true
+
+      - name: Upload SARIF report to GitHub Advanced Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
 
       - name: Run Git Security Sentinel against base branch
         run: |
