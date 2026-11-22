@@ -1,8 +1,9 @@
 name: Publish Python Package to PyPI
 
 on:
-  release:
-    types: [published]
+  # Publish only on tag pushes. A `release: published` trigger would re-run
+  # this workflow from the tag commit (which predates workflow-only fixes),
+  # creating a duplicate, red deployment for an already-published version.
   push:
     tags:
       - "v*"
@@ -60,7 +61,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
-          # Keep tag pushes and GitHub Releases idempotent: re-running a
-          # release for an already-published version skips existing files
+          # Idempotent re-runs of a tag: already-published files are skipped
           # instead of failing the workflow.
           skip-existing: true
