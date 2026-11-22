@@ -173,6 +173,13 @@ class TestE2ECLIFlagsAndBehaviors(unittest.TestCase):
         self.assertEqual(via_short.returncode, 0, via_short.stderr)
         self.assertIn("usage:", via_short.stdout)
 
+    def test_typo_flag_suggests_correction(self):
+        """Tier 2: A misspelled flag fails with a helpful correction."""
+        result = self._run_scanner(["scan", "--upgarde"])
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("unrecognized arguments: --upgarde", result.stderr)
+        self.assertIn("--upgarde -> --upgrade", result.stderr)
+
     def test_update_alias_and_index_url(self):
         """Tier 1: `git scan --update` and custom index flags are accepted."""
         if not HAS_PACKAGE:

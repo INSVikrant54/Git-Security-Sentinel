@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `git scan help` as a help path that works through Git delegation.
+- "Did you mean ...?" suggestions for misspelled flags (for example `--upgarde` -> `--upgrade`).
 
 ### Fixed
 - Documented that `git scan --help` is intercepted by Git for man-page lookup and never reaches the tool; use `git scan -h` or `git scan help` instead.

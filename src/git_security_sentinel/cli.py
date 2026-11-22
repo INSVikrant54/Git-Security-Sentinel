@@ -4,6 +4,7 @@ Provides git-scan, git-security-sentinel, and python -m git_security_sentinel in
 """
 
 import argparse
+import difflib
 import json
 import os
 from pathlib import Path
@@ -262,8 +263,31 @@ def resolve_ai_settings(args: argparse.Namespace, config_data: Optional[Dict[str
     }
 
 
+class SentinelArgumentParser(argparse.ArgumentParser):
+    """Argument parser that suggests the intended flag for common typos."""
+
+    def error(self, message: str) -> None:
+        if "unrecognized arguments:" in message:
+            bad_tokens = message.split("unrecognized arguments:", 1)[1].split()
+            known = [
+                option
+                for action in self._actions
+                for option in action.option_strings
+            ]
+            suggestions = []
+            for token in bad_tokens:
+                if not token.startswith("-"):
+                    continue
+                match = difflib.get_close_matches(token, known, n=1, cutoff=0.7)
+                if match:
+                    suggestions.append(f"{token} -> {match[0]}")
+            if suggestions:
+                message += "\nDid you mean: " + ", ".join(suggestions) + "?"
+        super().error(message)
+
+
 def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    parser = SentinelArgumentParser(
         prog=prog or "git-scan",
         description="Git Security Sentinel: Privacy-first Git diff security scanner.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
