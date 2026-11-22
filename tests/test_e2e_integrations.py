@@ -203,6 +203,10 @@ class TestE2EPyPIUpdateChecker(unittest.TestCase):
             result = check_for_pypi_update(current_version="1.0.0", no_check=False)
             self.assertIsNone(result, "Should bypass PyPI check in CI")
 
+        with patch.dict(os.environ, {"GITHUB_ACTIONS": "true", "CI": ""}):
+            result = check_for_pypi_update(current_version="1.0.0", no_check=False)
+            self.assertIsNone(result, "Should bypass PyPI check on GitHub Actions")
+
         with patch.dict(os.environ, {"SENTINEL_NO_UPDATE_CHECK": "1", "CI": ""}):
             result = check_for_pypi_update(current_version="1.0.0", no_check=False)
             self.assertIsNone(result, "Should bypass PyPI check when SENTINEL_NO_UPDATE_CHECK=1")
@@ -222,7 +226,9 @@ class TestE2EPyPIUpdateChecker(unittest.TestCase):
             }), encoding="utf-8")
 
             with patch("git_security_sentinel.update.checker.get_cache_file_path", return_value=cache_file):
-                with patch.dict(os.environ, {"CI": "", "SENTINEL_NO_UPDATE_CHECK": ""}):
+                with patch.dict(os.environ, {
+                    "CI": "", "GITHUB_ACTIONS": "", "SENTINEL_NO_UPDATE_CHECK": ""
+                }):
                     # Should read directly from cache without urllib request
                     with patch("urllib.request.urlopen") as mock_url:
                         latest = check_for_pypi_update(current_version="1.0.0", no_check=False)
@@ -240,7 +246,9 @@ class TestE2EPyPIUpdateChecker(unittest.TestCase):
         try:
             cache_file = Path(temp_dir) / "update_check.json"
             with patch("git_security_sentinel.update.checker.get_cache_file_path", return_value=cache_file):
-                with patch.dict(os.environ, {"CI": "", "SENTINEL_NO_UPDATE_CHECK": ""}):
+                with patch.dict(os.environ, {
+                    "CI": "", "GITHUB_ACTIONS": "", "SENTINEL_NO_UPDATE_CHECK": ""
+                }):
                     with patch("urllib.request.urlopen", side_effect=Exception("Network unreachable")):
                         latest = check_for_pypi_update(current_version="1.0.0", no_check=False)
                         self.assertIsNone(latest)
