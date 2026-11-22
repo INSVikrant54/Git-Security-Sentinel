@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Documented that `git scan --help` is intercepted by Git for man-page lookup and never reaches the tool; use `git scan -h` or `git scan help` instead.
+- The PR security-scan job now compares against `origin/<base>`; it previously used a bare branch name that does not exist in a pull-request checkout, so every PR failed that check.
 
 ### Changed
 - Package metadata now includes project URLs and keywords (visible on the next PyPI release).
