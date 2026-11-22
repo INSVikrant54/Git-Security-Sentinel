@@ -83,4 +83,4 @@ jobs:
 
       - name: Run Git Security Sentinel against base branch
         run: |
-          python scripts/scan_diff.py --base "${{ github.event.pull_request.base.ref }}" --severity-threshold high
+          python scripts/scan_diff.py --base "origin/${{ github.base_ref }}" --severity-threshold high
