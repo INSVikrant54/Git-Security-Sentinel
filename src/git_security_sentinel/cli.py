@@ -279,6 +279,10 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
   git scan --base main --format sarif --output results.sarif
   git scan --ai --fix --cost-estimate
   git scan --exclude "tests/**" --baseline .sentinel.baseline
+
+Note:
+  Git reserves `git scan --help` for its own man-page lookup, so it never
+  reaches this tool. Use `git scan -h` or `git scan help` instead.
 """,
     )
 
@@ -288,7 +292,7 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
     parser.add_argument(
         "git_command",
         nargs="?",
-        choices=["scan"],
+        choices=["scan", "help"],
         default=None,
         help=argparse.SUPPRESS,
     )
@@ -505,6 +509,10 @@ def build_arg_parser(prog: Optional[str] = None) -> argparse.ArgumentParser:
 def main(argv: Optional[List[str]] = None, prog: Optional[str] = None) -> int:
     parser = build_arg_parser(prog=prog)
     args = parser.parse_args(argv)
+
+    if args.git_command == "help":
+        parser.print_help()
+        return 0
 
     repo_path = Path(args.repo_root).resolve()
 

@@ -40,6 +40,7 @@ Git Security Sentinel provides both global console scripts and backwards-compati
 |---|---|---|
 | One-Command Setup | `git scan --init` | `python -m git_security_sentinel --init` |
 | Update the Tool | `git scan --update` | `python -m git_security_sentinel --update` |
+| Show Help | `git scan -h` or `git scan help` | `python -m git_security_sentinel -h` |
 | Custom Package Index | `git scan --update --index-url <URL>` | `python -m git_security_sentinel --update --index-url <URL>` |
 | Scan + AI (no flags) | `git scan --ai` | `python -m git_security_sentinel --ai` |
 | Concise Output | `git scan --oneline` | `python -m git_security_sentinel --oneline` |

@@ -224,6 +224,8 @@ usage: git scan [-h] [--staged | --unstaged | --all | --base BRANCH |
 
 **`git scan` is the signature command.** Git delegates `git scan ...` to the installed `git-scan` executable. The hyphenated form (`git-scan ...`) still works for backwards compatibility.
 
+Need help? Use `git scan -h` or `git scan help`. Git reserves `git scan --help` for its own man-page lookup, so that form never reaches this tool.
+
 #### Diff Scope Options (Mutually Exclusive)
 - `--staged`: Scan staged (index/cached) git changes.
 - `--unstaged`: Scan unstaged working directory changes.

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- `git scan help` as a help path that works through Git delegation.
+
+### Fixed
+- Documented that `git scan --help` is intercepted by Git for man-page lookup and never reaches the tool; use `git scan -h` or `git scan help` instead.
+
 ## [1.2.0] - 2026-11-22
 
 ### Added

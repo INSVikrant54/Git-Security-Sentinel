@@ -158,6 +158,21 @@ class TestE2ECLIFlagsAndBehaviors(unittest.TestCase):
         self.assertEqual(via_git.returncode, direct.returncode, via_git.stderr)
         self.assertIn("No security issues detected", via_git.stdout)
 
+    def test_help_token_and_short_flag(self):
+        """Tier 1: `git scan help` and `git scan -h` print usage.
+
+        `git scan --help` is intercepted by Git itself (man-page lookup) and
+        never reaches this tool, so `help`/`-h` are the supported forms.
+        """
+        via_token = self._run_scanner(["help"])
+        self.assertEqual(via_token.returncode, 0, via_token.stderr)
+        self.assertIn("usage:", via_token.stdout)
+        self.assertIn("git scan -h", via_token.stdout)
+
+        via_short = self._run_scanner(["-h"])
+        self.assertEqual(via_short.returncode, 0, via_short.stderr)
+        self.assertIn("usage:", via_short.stdout)
+
     def test_update_alias_and_index_url(self):
         """Tier 1: `git scan --update` and custom index flags are accepted."""
         if not HAS_PACKAGE:
