@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   test:
-    name: Run Unit Tests (Python ${{ matrix.python-version }})
+    name: Run Unit Tests (Python ${{ matrix.python-version }} on ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,6 +29,11 @@ jobs:
             os: ubuntu-latest
           - python-version: "3.13"
             os: ubuntu-latest
+          # Windows coverage for the subprocess/encoding paths.
+          - python-version: "3.11"
+            os: windows-latest
+          - python-version: "3.13"
+            os: windows-latest
 
     steps:
       - name: Check out repository

@@ -1,0 +1,84 @@
+name: Bug report
+description: Report a crash, false positive, missed detection, or incorrect behavior.
+title: "[Bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please **never paste real credentials**. Redact
+        secrets before sharing logs or diffs.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+      placeholder: "Running `git scan` reports ... but I expected ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands and a minimal diff or file that triggers it.
+      render: shell
+      placeholder: |
+        1. git init
+        2. echo '...' > file.py
+        3. git add file.py
+        4. git scan
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Issue type
+      options:
+        - Crash / traceback
+        - False positive (flagged something safe)
+        - Missed detection (should have flagged)
+        - Incorrect output format
+        - CLI / configuration problem
+        - Documentation problem
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: rule-id
+    attributes:
+      label: Rule ID (if applicable)
+      placeholder: secret.aws_access_key
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Output of `git scan --version` plus OS and Python version.
+      render: shell
+      placeholder: |
+        git-security-sentinel 1.2.0
+        OS: Windows 11
+        Python: 3.13.17
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Paste output with secrets redacted. Use `--verbose` if helpful.
+      render: shell
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: Confirmations
+      options:
+        - label: I have removed all real secrets and personal data from this report.
+          required: true
+        - label: I searched existing issues before opening this one.
+          required: true

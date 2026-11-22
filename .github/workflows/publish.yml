@@ -60,3 +60,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          # Keep tag pushes and GitHub Releases idempotent: re-running a
+          # release for an already-published version skips existing files
+          # instead of failing the workflow.
+          skip-existing: true

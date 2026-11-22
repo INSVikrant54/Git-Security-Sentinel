@@ -12,6 +12,16 @@ license = "MIT"
 authors = [
     { name = "Ayush Kumar" }
 ]
+keywords = [
+    "security",
+    "git",
+    "secret-scanning",
+    "sast",
+    "devsecops",
+    "pre-commit",
+    "sarif",
+    "ai",
+]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -28,6 +38,13 @@ classifiers = [
     "Topic :: Software Development :: Version Control :: Git",
 ]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/INSVikrant54/Git-Security-Sentinel"
+Repository = "https://github.com/INSVikrant54/Git-Security-Sentinel"
+Issues = "https://github.com/INSVikrant54/Git-Security-Sentinel/issues"
+Changelog = "https://github.com/INSVikrant54/Git-Security-Sentinel/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/INSVikrant54/Git-Security-Sentinel#readme"
 
 [project.scripts]
 git-scan = "git_security_sentinel.cli:main"

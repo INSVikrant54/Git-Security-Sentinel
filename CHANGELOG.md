@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Documented that `git scan --help` is intercepted by Git for man-page lookup and never reaches the tool; use `git scan -h` or `git scan help` instead.
 
+### Changed
+- Package metadata now includes project URLs and keywords (visible on the next PyPI release).
+- CI now runs the test suite on Windows (Python 3.11 and 3.13) in addition to Linux.
+- PyPI publishing is idempotent (`skip-existing`), so creating a GitHub Release for an already-published tag no longer fails on duplicate uploads.
+- Added a Code of Conduct, issue forms, a pull request template, and Dependabot configuration for GitHub Actions.
+
 ## [1.2.0] - 2026-11-22
 
 ### Added

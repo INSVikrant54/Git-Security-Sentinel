@@ -1,0 +1,50 @@
+name: Feature request
+description: Suggest a new rule, integration, or CLI improvement.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do, and what gets in the way?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What should the tool do instead? Include example commands if relevant.
+      render: shell
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New detection rule
+        - CLI / developer experience
+        - Output format (text, JSON, SARIF, GitHub)
+        - AI review
+        - Pre-commit / CI integration
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workarounds or other tools that solve this.
+
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Project constraints
+      options:
+        - label: This can be implemented with the Python standard library only (no runtime dependencies).
+          required: false

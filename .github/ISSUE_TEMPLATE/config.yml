@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability or leaked credential
+    url: https://github.com/INSVikrant54/Git-Security-Sentinel/security/advisories/new
+    about: Please report vulnerabilities privately, never in a public issue.
+  - name: Documentation and usage
+    url: https://github.com/INSVikrant54/Git-Security-Sentinel#readme
+    about: Installation, CLI reference, rules, and examples.

@@ -3,6 +3,8 @@
 > **Catch risky Git changes before they become security incidents.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![PyPI version](https://img.shields.io/pypi/v/git-security-sentinel.svg)](https://pypi.org/project/git-security-sentinel/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/git-security-sentinel.svg)](https://pypi.org/project/git-security-sentinel/)
 [![Python Version](https://img.shields.io/badge/python-3.9%20%7C%203.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue)](https://www.python.org/)
 [![Agent Skills Open Standard](https://img.shields.io/badge/Standard-Agent%20Skills%20v1.0-emerald)](https://agentskills.io/specification)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit&logoColor=white)](https://github.com/pre-commit/pre-commit)
@@ -552,7 +554,7 @@ Git Security Sentinel adheres to the following privacy invariants:
 
 ## 13. Contributing
 
-Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on code style, rule authoring, standard library constraints, and testing workflows.
+Contributions are warmly welcomed! Please read [CONTRIBUTING.md](CONTRIBUTING.md) for details on code style, rule authoring, standard library constraints, and testing workflows. By participating, you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ---
 
